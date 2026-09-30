@@ -63,7 +63,7 @@ export class SocketGateway implements OnGatewayInit {
 		client.send(JSON.stringify({ event: 'getMessages', list: this.messagesList }));
 	}
 
-	public handleDisConnection(client: WebSocket) {
+	public handleDisconnect(client: WebSocket) {
 		const authMember = this.clientsAuthMap.get(client);
 		this.summaryClient--;
 		this.clientsAuthMap.delete(client);
@@ -79,6 +79,7 @@ export class SocketGateway implements OnGatewayInit {
 		};
 		// client - disconnection
 		this.broadcastMessage(client, infoMsg);
+		this.emitMessage(infoMsg);
 	}
 
 	@SubscribeMessage('message')
