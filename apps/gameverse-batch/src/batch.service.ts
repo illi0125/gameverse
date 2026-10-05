@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { Property } from '../../nestar-api/src/libs/dto/property/property';
-import { Member } from '../../nestar-api/src/libs/dto/member/member';
-import { PropertyStatus } from '../../nestar-api/src/libs/enums/property.enum';
-import { MemberStatus, MemberType } from '../../nestar-api/src/libs/enums/member.enum';
+import { Property } from '../../gameverse-api/src/libs/dto/property/property';
+import { Member } from '../../gameverse-api/src/libs/dto/member/member';
+import { PropertyStatus } from '../../gameverse-api/src/libs/enums/property.enum';
+import { MemberStatus, MemberType } from '../../gameverse-api/src/libs/enums/member.enum';
 
 @Injectable()
 export class BatchService {
@@ -71,6 +71,6 @@ export class BatchService {
 	}
 
 	getHello(): string {
-		return 'Welcome to Nestar BATCH Server!';
+		return 'Welcome to Gameverse Batch Server!';
 	}
 }
