@@ -51,7 +51,7 @@ export class ViewService {
 							{ $skip: (page - 1) * limit },
 							{ $limit: limit },
 							lookupVisitedGame,
-							{ $unwind: '$visitedGame.memberData' },
+							{ $unwind: { path: '$visitedGame.memberData', preserveNullAndEmptyArrays: true } },
 						],
 						metaCounter: [{ $count: 'total' }],
 					},

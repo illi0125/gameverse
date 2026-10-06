@@ -90,3 +90,22 @@ The first business-domain migration is now implemented:
 | `git diff --check` | Passed |
 
 Database apply/verify/rollback was intentionally not executed against the configured remote database. It requires a reviewed manifest and a maintenance-window run against a backed-up database copy.
+
+## Member Games Compatibility Repair
+
+- Added defensive normalization for `memberGames` in `getMember`, `getAgents`, and admin member aggregation responses.
+- Added a focused `migrate:member-games` command with dry-run, apply, and verify modes.
+- The backfill preserves existing values, copies the legacy counter when available, defaults otherwise to zero, and leaves the legacy field untouched.
+- Added focused coverage for schema defaults, lean-query normalization, aggregation guards, dry-run behavior, legacy copying, and idempotent repeated execution.
+- The database backfill was not executed automatically or against the configured remote database.
+
+Validation passed with 5 Jest suites / 12 tests, API and batch typechecks, API and batch builds, both migration CLI help checks, and `git diff --check`.
+
+## Game Owner and Stale-Token Repair
+
+- Changed shared authentication to validate JWT signatures and then load the current active member from MongoDB; stale, blocked, and deleted members can no longer use protected APIs.
+- Kept optional authentication permissive by treating rejected tokens as anonymous, and applied the same database-backed identity behavior to WebSocket authentication.
+- Made single Game reads and Game list/favorite/visited aggregations preserve Games whose nullable `memberData` cannot be resolved.
+- Added an idempotent, transactional `repair:game-owner` command with dry-run, apply, and verify modes.
+- Reassigned the orphaned `Clash of Clans` Game (`6ac51727964023602da703cb`) to active AGENT Leo (`6ac50f373a8218715782a3ac`) on 2026-10-07 and verified `memberGames: 1` against one owned non-deleted Game.
+- Added focused authentication, optional-guard, Game read/aggregation, repair validation, transaction, verification, and repeated-apply tests.

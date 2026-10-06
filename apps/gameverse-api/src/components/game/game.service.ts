@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId } from 'mongoose';
 import {
@@ -81,7 +81,7 @@ export class GameService {
 			.findOne({ _id: gameId, gameStatus: { $in: [GameStatus.ACTIVE, GameStatus.UPCOMING] } })
 			.lean()
 			.exec()) as Game | null;
-		if (!targetGame) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
+		if (!targetGame) throw new NotFoundException(Message.NO_DATA_FOUND);
 
 		if (memberId) {
 			const viewInput = { memberId, viewRefId: gameId, viewGroup: ViewGroup.GAME };
@@ -93,7 +93,7 @@ export class GameService {
 			targetGame.meLiked = await this.likeService.checkLikeExistence(likeInput);
 		}
 
-		targetGame.memberData = await this.memberService.getMember(null, targetGame.memberId);
+		targetGame.memberData = await this.memberService.getMemberOrNull(targetGame.memberId);
 		return targetGame;
 	}
 
@@ -228,7 +228,7 @@ export class GameService {
 						{ $limit: input.limit },
 						lookupAuthMemberLiked(memberId ?? null, '$_id', LikeGroup.GAME),
 						lookupMember,
-						{ $unwind: '$memberData' },
+						{ $unwind: { path: '$memberData', preserveNullAndEmptyArrays: true } },
 					],
 					metaCounter: [{ $count: 'total' }],
 				},

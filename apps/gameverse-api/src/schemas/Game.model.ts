@@ -44,7 +44,8 @@ const GameSchema = new Schema(
 
 GameSchema.index({ gameStatus: 1, gameRank: -1 });
 GameSchema.index({ memberId: 1, gameStatus: 1, createdAt: -1 });
-GameSchema.index({ gameType: 1, gamePlatforms: 1, gameGenres: 1 });
+GameSchema.index({ gamePlatforms: 1 });
+GameSchema.index({ gameGenres: 1 });
 GameSchema.index({ isFeatured: 1, gameReleaseDate: -1 });
 GameSchema.index({ gamePrice: 1 });
 

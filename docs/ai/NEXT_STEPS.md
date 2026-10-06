@@ -6,15 +6,17 @@
 | --- | --- |
 | Remove `memberType` from public signup and normal member updates | Users cannot self-assign privileged roles |
 | Restrict self-service status changes and hash password updates | Member updates cannot bypass account/password controls |
-| Minimize JWT claims and recheck current member status/role | Role and block changes take effect predictably |
+| Minimize JWT claims | Current status and role are rechecked; reduce the remaining broad signed payload |
 | Isolate e2e MongoDB state | Tests never use development or production data |
 | Run a migration dry run against a sanitized database copy | Manifest, backups, indexes, references, and rollback are rehearsed before production |
+| Run and verify the focused `memberGames` backfill | Existing member queries no longer rely on the temporary zero-value read guard |
 
 ## P1 Catalog Follow-up
 
 | Task | Expected outcome |
 | --- | --- |
 | Add transaction or reconciliation handling around runtime social counters | Likes, views, comments, and counters resist partial failures |
+| Remove the temporary `memberGames` read guard after full migration verification | Member reads rely exclusively on persisted Game-era counters |
 | Add an authenticated GraphQL schema integration harness | Breaking contract changes are captured automatically |
 | Add structured Game reviews and ratings | Reserved counters gain an ownership-aware source of truth |
 | Add a distinct wishlist model | Favorites/likes no longer have to stand in for wishlist behavior |

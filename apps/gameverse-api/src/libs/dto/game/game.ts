@@ -111,7 +111,7 @@ export class Game {
 	updatedAt: Date;
 
 	@Field(() => Member, { nullable: true })
-	memberData?: Member;
+	memberData?: Member | null;
 
 	@Field(() => [MeLiked], { nullable: true })
 	meLiked?: MeLiked[];

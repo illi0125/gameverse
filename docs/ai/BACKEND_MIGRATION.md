@@ -45,6 +45,34 @@ Start from `docs/ai/GAME_MIGRATION_MANIFEST.example.json`. Every legacy Property
 
 Apply mode snapshots affected collections and indexes, preserves Game/member/social IDs, copies Property upload files, rewrites social groups and notification references, rebuilds indexes, and reconciles counters. An in-progress marker makes partial failure explicit; run rollback before retrying a stopped migration. Rollback restores snapshots and removes only upload files copied by the migration.
 
+### Member counter compatibility repair
+
+Legacy databases may contain `memberProperties` without `memberGames`. Until the full catalog migration is applied, member read paths normalize a missing `memberGames` value to `0` so the non-null GraphQL contract remains valid.
+
+Use the focused, idempotent backfill independently of the catalog manifest:
+
+```bash
+npm run migrate:member-games -- --dry-run
+npm run migrate:member-games -- --apply
+npm run migrate:member-games -- --verify
+```
+
+Apply mode copies `memberProperties` only when `memberGames` is missing or null, otherwise defaults it to `0`. Existing `memberGames` values are preserved and `memberProperties` is not deleted.
+
+### Orphan Game ownership repair
+
+Protected requests now validate the signed JWT and reload the current active member from MongoDB. Stale tokens for missing, blocked, or deleted members are rejected, and current database roles take precedence over role claims embedded in older tokens. Optional authentication treats rejected tokens as anonymous.
+
+Use the explicit repair command when a Game references a member that no longer exists:
+
+```bash
+npm run repair:game-owner -- --dry-run --game-id <game-id> --member-id <active-agent-id>
+npm run repair:game-owner -- --apply --game-id <game-id> --member-id <active-agent-id>
+npm run repair:game-owner -- --verify --game-id <game-id> --member-id <active-agent-id>
+```
+
+The command requires an orphan, non-deleted Game and an active AGENT replacement. Apply uses a transaction, changes ownership, and increments `memberGames` exactly once. Repeated apply is idempotent. Game reads keep `memberData` nullable and no longer misreport a missing owner as a missing Game.
+
 ## Compatibility Boundary
 
 This release intentionally has no Property API alias or dual-read period. API and batch must be deployed together after a successful dry run during a write-maintenance window. The previous application build and migration snapshots are required for rollback.

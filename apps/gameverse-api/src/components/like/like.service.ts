@@ -65,7 +65,7 @@ export class LikeService {
 							{ $skip: (page - 1) * limit },
 							{ $limit: limit },
 							lookupFavoriteGame,
-							{ $unwind: '$favoriteGame.memberData' },
+							{ $unwind: { path: '$favoriteGame.memberData', preserveNullAndEmptyArrays: true } },
 						],
 						metaCounter: [{ $count: 'total' }],
 					},

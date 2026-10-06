@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync } from 'fs';
 import * as path from 'path';
 import mongoose from 'mongoose';

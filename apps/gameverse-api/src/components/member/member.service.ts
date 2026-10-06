@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId } from 'mongoose';
 import { Member, Members } from '../../libs/dto/member/member';
@@ -15,6 +15,18 @@ import { LikeInput } from '../../libs/dto/like/like.input';
 import { LikeGroup } from '../../libs/enums/like.enum';
 import { Follower, Following, MeFollowed } from '../../libs/dto/follow/follow';
 import { lookupAuthMemberLiked } from '../../libs/config';
+
+export const memberGamesFallbackStage = {
+	$set: {
+		memberGames: { $ifNull: ['$memberGames', 0] },
+	},
+};
+
+export function normalizeMemberGames<T extends { memberGames?: number | null }>(
+	member: T,
+): T & { memberGames: number } {
+	return { ...member, memberGames: member.memberGames ?? 0 };
+}
 
 @Injectable()
 export class MemberService {
@@ -41,7 +53,7 @@ export class MemberService {
 	}
 
 	public async login(input: LoginInput): Promise<Member> {
-		const { memberNick, memberPassword } = input;
+		const { memberNick } = input;
 		const response: Member | null = await this.memberModel
 			.findOne({ memberNick: memberNick })
 			.select('+memberPassword')
@@ -67,19 +79,14 @@ export class MemberService {
 			.exec();
 		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
 		result.accessToken = await this.authService.createToken(result);
-		0;
 		return result;
 	}
 
 	public async getMember(memberId: ObjectId | null, targetId: ObjectId): Promise<Member> {
-		const search: T = {
-			_id: targetId,
-			memberStatus: {
-				$in: [MemberStatus.ACTIVE, MemberStatus.BLOCK],
-			},
-		};
-		const targetMember = (await this.memberModel.findOne(search).lean().exec()) as any;
+		const targetMember = await this.getMemberOrNull(targetId);
 		if (!targetMember) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
+
+		const search: T = { _id: targetId, memberStatus: { $in: [MemberStatus.ACTIVE, MemberStatus.BLOCK] } };
 
 		if (memberId) {
 			// record view
@@ -101,6 +108,17 @@ export class MemberService {
 		return targetMember;
 	}
 
+	public async getMemberOrNull(targetId: ObjectId): Promise<Member | null> {
+		const search: T = {
+			_id: targetId,
+			memberStatus: {
+				$in: [MemberStatus.ACTIVE, MemberStatus.BLOCK],
+			},
+		};
+		const targetMember = (await this.memberModel.findOne(search).lean().exec()) as Member | null;
+		return targetMember ? normalizeMemberGames(targetMember) : null;
+	}
+
 	private async checkSubscription(followerId: ObjectId, followingId: ObjectId): Promise<MeFollowed[]> {
 		const result = await this.followModel.findOne({ followingId: followingId, followerId: followerId }).exec();
 		return result ? [{ followerId: followerId, followingId: followingId, myFollowing: true }] : [];
@@ -117,6 +135,7 @@ export class MemberService {
 		const result = await this.memberModel
 			.aggregate([
 				{ $match: match },
+				memberGamesFallbackStage,
 				{ $sort: sort },
 				{
 					$facet: {
@@ -167,6 +186,7 @@ export class MemberService {
 		const result = await this.memberModel
 			.aggregate([
 				{ $match: match },
+				memberGamesFallbackStage,
 				{ $sort: sort },
 				{
 					$facet: {

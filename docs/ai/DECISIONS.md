@@ -27,6 +27,9 @@
 | Keep generic Game comments separate from reviews | Structured ratings/reviews need a later ownership-aware model | Game has both comment and reserved review counters | Treat legacy comments as reviews; remove Game comments |
 | Persist Game popularity rank | Existing batch sorting remains efficient | Rank is eventually consistent with social counters | Calculate at query time; feature only by admin flag |
 | Include target group in Like/View identity | Polymorphic ObjectIds can collide across collections | Requires index migration and duplicate preflight | Preserve unsafe two-field uniqueness |
+| Backfill and temporarily guard `memberGames` | Legacy member documents can omit the new non-null GraphQL field before the full catalog migration | Missing values temporarily appear as zero until backfilled | Make the GraphQL field nullable; require the full catalog migration immediately |
+| Revalidate JWT members against MongoDB | Stale JWT snapshots allowed a missing member to create an orphan Game and could retain outdated roles | Protected requests add one member lookup and existing tokens for removed/blocked accounts stop working | Trust JWT claims until expiry; validate only Game creation |
+| Keep Game owner projections nullable while enforcing ownership on writes | MongoDB does not enforce cross-collection references, so a later member removal must not make a valid public Game unreadable | Public responses can expose `memberData: null` for inconsistent legacy data | Fail the whole Game read; remove orphan Games from catalog lists |
 
 ## Current Compatibility Boundaries
 
@@ -47,7 +50,7 @@ Property GraphQL/Mongoose contracts are no longer protected; they were replaced 
 
 - Public signup currently accepts `memberType`, allowing a caller to request a privileged role.
 - Normal member updates expose `memberType` and `memberStatus`.
-- JWTs contain a broad snapshot of member data and are trusted without rechecking current database status or role until expiry.
+- JWTs still contain a broad snapshot of member data, although authorization now reloads the current active member and role from MongoDB.
 - Password changes through the generic member update path are not re-hashed.
 
 ### Files and transport
