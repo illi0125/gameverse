@@ -1,5 +1,5 @@
 import { BoardArticleService } from './../board-article/board-article.service';
-import { PropertyService } from './../property/property.service';
+import { GameService } from './../game/game.service';
 import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId } from 'mongoose';
@@ -17,7 +17,7 @@ export class CommentService {
 	constructor(
 		@InjectModel('Comment') private readonly commentModel: Model<Comment>,
 		private readonly memberService: MemberService,
-		private readonly propertyService: PropertyService,
+		private readonly gameService: GameService,
 		private readonly boardArticleService: BoardArticleService,
 	) {}
 
@@ -33,10 +33,10 @@ export class CommentService {
 		}
 
 		switch (input.commentGroup) {
-			case CommentGroup.PROPERTY:
-				await this.propertyService.propertyStatsEditor({
+			case CommentGroup.GAME:
+				await this.gameService.gameStatsEditor({
 					_id: input.commentRefId,
-					targetKey: 'propertyComments',
+					targetKey: 'gameComments',
 					modifier: 1,
 				});
 				break;
@@ -77,16 +77,17 @@ export class CommentService {
 			)
 			.exec();
 		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
+		if (input.commentStatus === CommentStatus.DELETE) await this.decrementTargetCounter(result);
 		return result;
 	}
 
 	public async getComments(memberId: ObjectId, input: CommentsInquiry): Promise<Comments> {
-		const { commentRefId } = input.search;
-		const match: T = { commentRefId: commentRefId, commentStatus: CommentStatus.ACTIVE };
+		const { commentRefId, commentGroup } = input.search;
+		const match: T = { commentRefId, commentGroup, commentStatus: CommentStatus.ACTIVE };
 		const sort: T = { [input?.sort ?? 'createdAt']: input?.direction ?? Direction.DESC };
 
-		const result: Comments[] = await this.commentModel
-			.aggregate([
+		const result = await this.commentModel
+			.aggregate<Comments>([
 				{ $match: match },
 				{ $sort: sort },
 				{
@@ -112,7 +113,30 @@ export class CommentService {
 		const result = await this.commentModel.findByIdAndDelete(input);
 
 		if (!result) throw new InternalServerErrorException(Message.REMOVE_FAILED);
+		await this.decrementTargetCounter(result);
 
 		return result;
+	}
+
+	private async decrementTargetCounter(comment: Comment): Promise<void> {
+		switch (comment.commentGroup) {
+			case CommentGroup.GAME:
+				await this.gameService.gameStatsEditor({ _id: comment.commentRefId, targetKey: 'gameComments', modifier: -1 });
+				break;
+			case CommentGroup.ARTICLE:
+				await this.boardArticleService.boardArticleStatsEditor({
+					_id: comment.commentRefId,
+					targetKey: 'articleComments',
+					modifier: -1,
+				});
+				break;
+			case CommentGroup.MEMBER:
+				await this.memberService.memberStatsEditor({
+					_id: comment.commentRefId,
+					targetKey: 'memberComments',
+					modifier: -1,
+				});
+				break;
+		}
 	}
 }

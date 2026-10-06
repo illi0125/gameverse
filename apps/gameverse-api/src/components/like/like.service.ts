@@ -5,17 +5,18 @@ import { Like, MeLiked } from '../../libs/dto/like/like';
 import { LikeInput } from '../../libs/dto/like/like.input';
 import { T } from '../../libs/types/common';
 import { Message } from '../../libs/enums/common.enum';
-import { OrdinaryInquiry } from '../../libs/dto/property/property.input';
-import { Properties } from '../../libs/dto/property/property';
+import { OrdinaryInquiry } from '../../libs/dto/game/game.input';
+import { Game, Games } from '../../libs/dto/game/game';
 import { LikeGroup } from '../../libs/enums/like.enum';
-import { lookupFavorite } from '../../libs/config';
+import { lookupFavoriteGame } from '../../libs/config';
+import { GameStatus } from '../../libs/enums/game.enum';
 
 @Injectable()
 export class LikeService {
 	constructor(@InjectModel('Like') private readonly likeModel: Model<Like>) {}
 
 	public async toggleLike(input: LikeInput): Promise<number> {
-		const search: T = { memberId: input.memberId, likeRefId: input.likeRefId },
+		const search: T = { memberId: input.memberId, likeRefId: input.likeRefId, likeGroup: input.likeGroup },
 			exist = await this.likeModel.findOne(search).exec();
 		let modifier = 1;
 
@@ -35,35 +36,36 @@ export class LikeService {
 	}
 
 	public async checkLikeExistence(input: LikeInput): Promise<MeLiked[]> {
-		const { memberId, likeRefId } = input;
-		const result = await this.likeModel.findOne({ memberId: memberId, likeRefId: likeRefId }).exec();
+		const { memberId, likeRefId, likeGroup } = input;
+		const result = await this.likeModel.findOne({ memberId, likeRefId, likeGroup }).exec();
 		return result ? [{ memberId: memberId, likeRefId: likeRefId, myFavorite: true }] : [];
 	}
 
-	public async getFavoriteProperties(memberId: ObjectId, input: OrdinaryInquiry): Promise<Properties> {
+	public async getFavoriteGames(memberId: ObjectId, input: OrdinaryInquiry): Promise<Games> {
 		const { page, limit } = input;
-		const match: T = { likeGroup: LikeGroup.PROPERTY, memberId: memberId };
+		const match: T = { likeGroup: LikeGroup.GAME, memberId: memberId };
 
-		const data: T = await this.likeModel
-			.aggregate([
+		const data = await this.likeModel
+			.aggregate<{ list: Array<{ favoriteGame: Game }>; metaCounter: Games['metaCounter'] }>([
 				{ $match: match },
 				{ $sort: { updatedAt: -1 } },
 				{
 					$lookup: {
-						from: 'properties',
+						from: 'games',
 						localField: 'likeRefId',
 						foreignField: '_id',
-						as: 'favoriteProperty',
+						as: 'favoriteGame',
 					},
 				},
-				{ $unwind: '$favoriteProperty' },
+				{ $unwind: '$favoriteGame' },
+				{ $match: { 'favoriteGame.gameStatus': { $in: [GameStatus.ACTIVE, GameStatus.UPCOMING] } } },
 				{
 					$facet: {
 						list: [
 							{ $skip: (page - 1) * limit },
 							{ $limit: limit },
-							lookupFavorite,
-							{ $unwind: '$favoriteProperty.memberData' },
+							lookupFavoriteGame,
+							{ $unwind: '$favoriteGame.memberData' },
 						],
 						metaCounter: [{ $count: 'total' }],
 					},
@@ -72,8 +74,8 @@ export class LikeService {
 			.exec();
 
 		// console.log('data:', data[0].list[0]);
-		const result: Properties = { list: [], metaCounter: data[0].metaCounter };
-		result.list = data[0].list.map((ele) => ele.favoriteProperty);
+		const result: Games = { list: [], metaCounter: data[0]?.metaCounter ?? [] };
+		result.list = (data[0]?.list ?? []).map((ele) => ele.favoriteGame);
 		// console.log('result:', result);
 		return result;
 	}

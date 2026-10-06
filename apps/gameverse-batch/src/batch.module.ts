@@ -5,7 +5,7 @@ import { ConfigModule } from '@nestjs/config';
 import { DatabaseModule } from './database/database.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { MongooseModule } from '@nestjs/mongoose';
-import PropertySchema from '../../gameverse-api/src/schemas/Property.model';
+import GameSchema from '../../gameverse-api/src/schemas/Game.model';
 import MemberSchema from '../../gameverse-api/src/schemas/Member.model';
 
 @Module({
@@ -13,7 +13,7 @@ import MemberSchema from '../../gameverse-api/src/schemas/Member.model';
 		ConfigModule.forRoot(),
 		DatabaseModule,
 		ScheduleModule.forRoot(),
-		MongooseModule.forFeature([{ name: 'Property', schema: PropertySchema }]),
+		MongooseModule.forFeature([{ name: 'Game', schema: GameSchema }]),
 		MongooseModule.forFeature([{ name: 'Member', schema: MemberSchema }]),
 	],
 	controllers: [BatchController],

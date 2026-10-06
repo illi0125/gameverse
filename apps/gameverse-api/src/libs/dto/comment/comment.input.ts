@@ -26,6 +26,10 @@ export class CommentInput {
 @InputType()
 class CISearch {
 	@IsNotEmpty()
+	@Field(() => CommentGroup)
+	commentGroup: CommentGroup;
+
+	@IsNotEmpty()
 	@Field(() => String)
 	commentRefId: ObjectId;
 }

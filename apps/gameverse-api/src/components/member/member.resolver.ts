@@ -13,7 +13,8 @@ import { MemberUpdate } from '../../libs/dto/member/member.update';
 import { getSerialForImage, shapeIntoMongoObjectId, validMimeTypes } from '../../libs/config';
 import { WithoutGuard } from '../auth/guards/without.guard';
 import { GraphQLUpload, FileUpload } from 'graphql-upload';
-import { createWriteStream } from 'fs';
+import { createWriteStream, mkdirSync } from 'fs';
+import * as path from 'path';
 import { Message } from '../../libs/enums/common.enum';
 
 @Resolver()
@@ -131,7 +132,7 @@ export class MemberResolver {
 		if (!validMime) throw new Error(Message.PROVIDE_ALLOWED_FORMAT);
 
 		const imageName = getSerialForImage(filename);
-		const url = `uploads/${target}/${imageName}`;
+		const url = this.buildUploadPath(target, imageName);
 		const stream = createReadStream();
 
 		const result = await new Promise((resolve, reject) => {
@@ -163,7 +164,7 @@ export class MemberResolver {
 				if (!validMime) throw new Error(Message.PROVIDE_ALLOWED_FORMAT);
 
 				const imageName = getSerialForImage(filename);
-				const url = `uploads/${target}/${imageName}`;
+				const url = this.buildUploadPath(target, imageName);
 				const stream = createReadStream();
 
 				const result = await new Promise((resolve, reject) => {
@@ -182,5 +183,16 @@ export class MemberResolver {
 
 		await Promise.all(promisedList);
 		return uploadedImages;
+	}
+
+	private buildUploadPath(target: String, imageName: string): string {
+		const allowedTargets = new Set(['member', 'article', 'game']);
+		const targetName = String(target);
+		if (!allowedTargets.has(targetName)) throw new Error(Message.NOT_ALLOWED_REQUEST);
+		const uploadRoot = path.resolve('uploads');
+		const targetDirectory = path.resolve(uploadRoot, targetName);
+		if (!targetDirectory.startsWith(`${uploadRoot}${path.sep}`)) throw new Error(Message.NOT_ALLOWED_REQUEST);
+		mkdirSync(targetDirectory, { recursive: true });
+		return path.join('uploads', targetName, imageName);
 	}
 }

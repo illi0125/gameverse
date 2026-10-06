@@ -1,15 +1,19 @@
-import { ObjectId } from 'bson';
+import { ObjectId as BsonObjectId } from 'bson';
+import { type ObjectId } from 'mongoose';
 
 export const availableAgentSorts = ['createdAt', 'updatedAt', 'memberLikes', 'memberViews', 'memberRank'];
 export const availableMemberSorts = ['createdAt', 'updatedAt', 'memberLikes', 'memberViews'];
-export const availableOptions = ['propertyBarter', 'propertyRent'];
-export const availablePropertySorts = [
+export const availableGameSorts = [
 	'createdAt',
 	'updatedAt',
-	'propertyLikes',
-	'propertyViews',
-	'propertyRank',
-	'propertyPrice',
+	'gameLikes',
+	'gameViews',
+	'gameComments',
+	'gameReviews',
+	'gameRatings',
+	'gameRank',
+	'gamePrice',
+	'gameReleaseDate',
 ];
 export const availableBoardArticleSorts = ['createdAt', 'updatedAt', 'articleLikes', 'articleViews'];
 export const availableCommentSorts = ['createdAt', 'updatedAt'];
@@ -17,21 +21,29 @@ export const availableCommentSorts = ['createdAt', 'updatedAt'];
 // ----------------------------------------
 // IMAGE CONFIGURATION
 // ----------------------------------------
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import * as path from 'path';
 import { T } from './types/common';
 
 export const validMimeTypes = ['image/png', 'image/jpg', 'image/jpeg'];
 export const getSerialForImage = (filename: string) => {
 	const ext = path.parse(filename).ext;
-	return uuidv4() + ext;
+	return randomUUID() + ext;
 };
 
-export const shapeIntoMongoObjectId = (target: any) => {
-	return typeof target === 'string' ? new ObjectId(target) : target;
-};
+export function shapeIntoMongoObjectId(target: string): ObjectId;
+export function shapeIntoMongoObjectId(target: ObjectId): ObjectId;
+export function shapeIntoMongoObjectId(target: undefined): undefined;
+export function shapeIntoMongoObjectId(target: ObjectId | undefined): ObjectId | undefined;
+export function shapeIntoMongoObjectId(target: string | ObjectId | undefined): ObjectId | undefined {
+	return typeof target === 'string' ? (new BsonObjectId(target) as unknown as ObjectId) : target;
+}
 
-export const lookupAuthMemberLiked = (memberId: T, targetRefId: string = '$_id') => {
+export const lookupAuthMemberLiked = (
+	memberId: T | null | undefined,
+	targetRefId: string = '$_id',
+	likeGroup?: string,
+) => {
 	return {
 		$lookup: {
 			from: 'likes',
@@ -44,7 +56,11 @@ export const lookupAuthMemberLiked = (memberId: T, targetRefId: string = '$_id')
 				{
 					$match: {
 						$expr: {
-							$and: [{ $eq: ['$likeRefId', '$$localLikeRefId'] }, { $eq: ['$memberId', '$$localMemberId'] }],
+							$and: [
+								{ $eq: ['$likeRefId', '$$localLikeRefId'] },
+								{ $eq: ['$memberId', '$$localMemberId'] },
+								...(likeGroup ? [{ $eq: ['$likeGroup', likeGroup] }] : []),
+							],
 						},
 					},
 				},
@@ -125,20 +141,20 @@ export const lookupFollowerData = {
 	},
 };
 
-export const lookupFavorite = {
+export const lookupFavoriteGame = {
 	$lookup: {
 		from: 'members',
-		localField: 'favoriteProperty.memberId',
+		localField: 'favoriteGame.memberId',
 		foreignField: '_id',
-		as: 'favoriteProperty.memberData',
+		as: 'favoriteGame.memberData',
 	},
 };
 
-export const lookupVisit = {
+export const lookupVisitedGame = {
 	$lookup: {
 		from: 'members',
-		localField: 'visitedProperty.memberId',
+		localField: 'visitedGame.memberId',
 		foreignField: '_id',
-		as: 'visitedProperty.memberData',
+		as: 'visitedGame.memberData',
 	},
 };

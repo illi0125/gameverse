@@ -16,12 +16,15 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "NODE_ENV=production node dist/apps/gameverse-api/main",
     "start:prod:batch": "node dist/apps/gameverse-batch/main",
+    "migrate:games": "ts-node scripts/migrate-property-to-game.ts",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./apps/gameverse-api/test/jest-e2e.json"
+    "test:e2e": "npm run test:e2e:api && npm run test:e2e:batch",
+    "test:e2e:api": "jest --config ./apps/gameverse-api/test/jest-e2e.json --runInBand",
+    "test:e2e:batch": "jest --config ./apps/gameverse-batch/test/jest-e2e.json --runInBand"
   },
   "dependencies": {
     "@apollo/server": "^4.9.5",
@@ -47,7 +50,6 @@
     "mongoose": "^8.0.0",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",
-    "uuid": "^14.0.2",
     "ws": "^8.14.2"
   },
   "devDependencies": {

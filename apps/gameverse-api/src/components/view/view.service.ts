@@ -4,10 +4,11 @@ import { Model, ObjectId } from 'mongoose';
 import { View } from '../../libs/dto/view/view';
 import { ViewInput } from '../../libs/dto/view/view.input';
 import { T } from '../../libs/types/common';
-import { OrdinaryInquiry } from '../../libs/dto/property/property.input';
-import { Properties } from '../../libs/dto/property/property';
+import { OrdinaryInquiry } from '../../libs/dto/game/game.input';
+import { Game, Games } from '../../libs/dto/game/game';
 import { ViewGroup } from '../../libs/enums/view.enum';
-import { lookupVisit } from '../../libs/config';
+import { lookupVisitedGame } from '../../libs/config';
+import { GameStatus } from '../../libs/enums/game.enum';
 
 @Injectable()
 export class ViewService {
@@ -21,35 +22,36 @@ export class ViewService {
 	}
 
 	private async checkViewExistence(input: ViewInput): Promise<View | null> {
-		const { memberId, viewRefId } = input;
-		const search: T = { memberId: memberId, viewRefId: viewRefId };
+		const { memberId, viewRefId, viewGroup } = input;
+		const search: T = { memberId, viewRefId, viewGroup };
 		return await this.viewModel.findOne(search).exec();
 	}
 
-	public async getVisitedProperties(memberId: ObjectId, input: OrdinaryInquiry): Promise<Properties> {
+	public async getVisitedGames(memberId: ObjectId, input: OrdinaryInquiry): Promise<Games> {
 		const { page, limit } = input;
-		const match: T = { viewGroup: ViewGroup.PROPERTY, memberId: memberId };
+		const match: T = { viewGroup: ViewGroup.GAME, memberId: memberId };
 
-		const data: T = await this.viewModel
-			.aggregate([
+		const data = await this.viewModel
+			.aggregate<{ list: Array<{ visitedGame: Game }>; metaCounter: Games['metaCounter'] }>([
 				{ $match: match },
 				{ $sort: { updatedAt: -1 } },
 				{
 					$lookup: {
-						from: 'properties',
+						from: 'games',
 						localField: 'viewRefId',
 						foreignField: '_id',
-						as: 'visitedProperty',
+						as: 'visitedGame',
 					},
 				},
-				{ $unwind: '$visitedProperty' },
+				{ $unwind: '$visitedGame' },
+				{ $match: { 'visitedGame.gameStatus': { $in: [GameStatus.ACTIVE, GameStatus.UPCOMING] } } },
 				{
 					$facet: {
 						list: [
 							{ $skip: (page - 1) * limit },
 							{ $limit: limit },
-							lookupVisit,
-							{ $unwind: '$visitedProperty.memberData' },
+							lookupVisitedGame,
+							{ $unwind: '$visitedGame.memberData' },
 						],
 						metaCounter: [{ $count: 'total' }],
 					},
@@ -58,8 +60,8 @@ export class ViewService {
 			.exec();
 
 		// console.log('data:', data[0].list[0]);
-		const result: Properties = { list: [], metaCounter: data[0].metaCounter };
-		result.list = data[0].list.map((ele) => ele.visitedProperty);
+		const result: Games = { list: [], metaCounter: data[0]?.metaCounter ?? [] };
+		result.list = (data[0]?.list ?? []).map((ele) => ele.visitedGame);
 		// console.log('result:', result);
 		return result;
 	}

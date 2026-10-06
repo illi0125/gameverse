@@ -59,5 +59,34 @@ Before staging, a filesystem move appears in `git status` as deleted old files p
 
 ## Current Migration Boundary
 
-The completed work is a repository and application identity migration. It must not be interpreted as completion of the Gameverse business-domain migration. The active backend contract still exposes Property and Agent concepts.
+The active backend contract now exposes the Game catalog while intentionally retaining Agent roles and APIs. Commerce, wishlist, and structured review domains remain future work.
 
+## Property-to-Game Vertical Slice
+
+The first business-domain migration is now implemented:
+
+- Replaced Property components, DTOs, enums, schema, model binding, collection access, and GraphQL operations with Game equivalents.
+- Added the approved Game status/type/platform/genre/mode enums, catalog fields, embedded system requirements, immutable generated slugs, strict price rules, lifecycle handling, filters, sorts, and indexes.
+- Preserved `MemberType.USER | AGENT | ADMIN`; AGENT remains the Game owner and `memberProperties` became `memberGames`.
+- Migrated likes, views, comments, favorites, visited Games, notifications, upload targeting, and aggregation lookups to Game terminology and group-aware identity.
+- Added persisted Game ranking and updated batch/Agent ranking without changing cron schedules.
+- Added an explicit manifest-driven migration CLI with dry-run, apply, verify, snapshots, counter reconciliation, partial-failure markers, and rollback.
+- Added focused Game rule/lifecycle and batch ranking tests.
+- Updated backend, frontend-contract, decisions, next-steps, and migration-manifest documentation.
+
+### Game Migration Validation
+
+| Check | Result |
+| --- | --- |
+| Focused Jest suite | 4 suites / 11 tests passed |
+| API and batch HTTP smoke tests | Passed |
+| API `tsc --noEmit` | Passed |
+| Batch `tsc --noEmit` | Passed |
+| API build | Passed |
+| Batch build | Passed |
+| Default build | Passed |
+| Migration CLI compilation/help | Passed |
+| Active runtime Property identifier scan | No matches |
+| `git diff --check` | Passed |
+
+Database apply/verify/rollback was intentionally not executed against the configured remote database. It requires a reviewed manifest and a maintenance-window run against a backed-up database copy.

@@ -19,19 +19,27 @@
 | Declare lint config imports as direct dev dependencies | Makes lint execution reproducible rather than relying on transitive packages | Adds dependency-lockfile changes to the rename | Rewrite the ESLint configuration; continue relying on transitive dependencies |
 | Lint only content-changed TypeScript files | Validates the rename without generating a repository-wide formatting diff | Existing legacy lint debt remains | Format the entire repository; only verify ESLint starts |
 | Treat frontend mappings as provisional | No Next.js frontend source is available in this workspace | Proposed paths may not match the actual frontend | Invent exact paths; defer all frontend documentation |
+| Replace Property with Game as a breaking contract | The approved migration explicitly rejects aliases and dual reads | Existing Property clients must migrate before deployment | Parallel Property/Game APIs; compatibility adapters |
+| Preserve `MemberType.AGENT` as Game owner | Existing authorization and ownership behavior remains usable | Seller terminology remains provisional | Rename or add a Seller member type |
+| Use an enrichment manifest for legacy documents | Real-estate metadata cannot safely infer platforms, genres, modes, publishers, or developers | Production cutover depends on a complete reviewed manifest | Discard data; create placeholder Game metadata |
+| Generate immutable unique Game slugs | Stable URLs should survive title edits | Slug corrections require a later administrative workflow | Client-supplied or title-synchronized slugs |
+| Derive `isUpcoming` from `GameStatus.UPCOMING` | Avoids duplicate persisted lifecycle state | Release date and status can intentionally differ | Persist and synchronize a separate boolean |
+| Keep generic Game comments separate from reviews | Structured ratings/reviews need a later ownership-aware model | Game has both comment and reserved review counters | Treat legacy comments as reviews; remove Game comments |
+| Persist Game popularity rank | Existing batch sorting remains efficient | Rank is eventually consistent with social counters | Calculate at query time; feature only by admin flag |
+| Include target group in Like/View identity | Polymorphic ObjectIds can collide across collections | Requires index migration and duplicate preflight | Preserve unsafe two-field uniqueness |
 
-## Protected Compatibility Boundaries
+## Current Compatibility Boundaries
 
-The completed rename deliberately treated these as frozen interfaces:
+The Game migration intentionally preserves these interfaces:
 
-- GraphQL query, mutation, object, input, and enum names.
+- `MemberType.USER | AGENT | ADMIN` and Agent ownership authorization.
+- Shared member, follow, board article, auth, and socket operation names.
 - Resolver authorization rules.
-- Mongoose schemas, indexes, references, and collection names.
-- Environment-variable names.
-- Cron expressions, job constants, method names, and formulas.
+- Existing environment-variable names.
+- Cron expressions and execution times.
 - WebSocket event behavior.
 
-Any future change to these boundaries should be planned as a separate compatibility or data-migration project.
+Property GraphQL/Mongoose contracts are no longer protected; they were replaced by the approved Game contract.
 
 ## Known Risks Carried Forward
 
@@ -44,22 +52,17 @@ Any future change to these boundaries should be planned as a separate compatibil
 
 ### Files and transport
 
-- Upload targets are interpolated into filesystem paths without a strict allowlist or containment check.
 - GraphQL Playground and permissive credentialed CORS are enabled without environment-specific restrictions.
 - WebSocket tokens use query parameters, and chat lacks persistence, payload validation, and rate limiting.
 
 ### Data consistency
 
-- Property lifecycle timestamps are assigned to local variables rather than persisted in the update object.
-- Like and View uniqueness excludes the target group, which is unsafe for polymorphic targets.
 - Denormalized counters are modified without transactions and can drift after partial failures or concurrency.
-- Comment deletion does not reconcile target counters.
 
 ### Architecture
 
 - The batch app imports implementation types directly from the API app.
 - Notice and Notification schemas are currently orphaned.
-- Domain terminology is spread through DTOs, aggregations, indexes, upload folders, and scheduled ranking logic.
+- Migration and rollback still require coordinated API/batch deployment and a maintenance window.
 
 These risks are documented rather than silently changed because security hardening and domain redesign require their own tests and rollout plans.
-

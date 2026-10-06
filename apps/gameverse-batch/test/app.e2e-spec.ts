@@ -1,14 +1,26 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { BatchModule } from '../src/batch.module';
+import { BatchController } from '../src/batch.controller';
+import { BatchService } from '../src/batch.service';
 
 describe('GameverseBatchController (e2e)', () => {
 	let app: INestApplication;
 
 	beforeEach(async () => {
 		const moduleFixture: TestingModule = await Test.createTestingModule({
-			imports: [BatchModule],
+			controllers: [BatchController],
+			providers: [
+				{
+					provide: BatchService,
+					useValue: {
+						getHello: () => 'Welcome to Gameverse Batch Server!',
+						batchRolBack: jest.fn(),
+						batchTopGames: jest.fn(),
+						batchTopAgents: jest.fn(),
+					},
+				},
+			],
 		}).compile();
 
 		app = moduleFixture.createNestApplication();

@@ -55,7 +55,7 @@ const MemberSchema = new Schema({
     type: String,
   },
 
-  memberProperties: {
+  memberGames: {
     type: Number,
     default: 0,
   },

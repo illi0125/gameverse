@@ -1,0 +1,22 @@
+{
+  "REPLACE_WITH_PROPERTY_OBJECT_ID": {
+    "gameStatus": "ACTIVE",
+    "gameType": "PAID",
+    "gameDeveloper": "Example Developer",
+    "gamePublisher": "Example Publisher",
+    "gameOverview": "Long-form catalog overview",
+    "gameReleaseDate": "2026-10-06T00:00:00.000Z",
+    "gamePlatforms": ["PC"],
+    "gameGenres": ["ACTION"],
+    "gameModes": ["SINGLE_PLAYER"],
+    "gameVideos": [],
+    "gameSystemRequirements": [
+      {
+        "platform": "PC",
+        "minimum": "Document the minimum supported PC configuration",
+        "recommended": "Document the recommended PC configuration"
+      }
+    ],
+    "gameDiscountPrice": 0
+  }
+}
