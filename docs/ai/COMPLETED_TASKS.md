@@ -210,3 +210,122 @@ Phases 0–8 committed as `591ada5` on `modification`.
 | Route smoke test (13 routes) | All 200; legacy routes 307 |
 | Homepage / About / Join / CS in headless Chrome | Render with new branding and placeholders; live data loads; no GraphQL errors |
 | Residual scan (Property / Nestar / real-estate terms, assets) | Only intentional legacy redirects/aliases remain |
+
+## Frontend Redesign (gameverse-next) — Homepage chapter 00: Title screen
+
+KPRVerse-inspired "Boot Sequence" direction (plan approved 2026-10-08). Only the first homepage section changed; Trending, Popular, Top, Agents, Community and Events are untouched.
+
+- **Hero (`HomeHero.tsx`):** full-bleed ultraviolet duotone built from live top-ranked game covers (blur + grain), a sharp cut-corner "cartridge" plate with a ranked-game caption linking to `/game/detail?id=`, oversized staggered headline (Find. / Compare. / Play.), mono CTAs (`/game`, `/community?articleCategory=FREE`), HUD hairline frame. Data comes from `GET_GAMES` with exactly `TopGames.defaultProps` variables (shared Apollo cache entry).
+- **Motion:** GSAP + ScrollTrigger (new dependency `gsap`). Desktop ≥900×560: 230vh sticky runway — covers advance with scroll, headline lines drift, then the stage shrinks/tilts out as a cartridge while the banner slides over it. Narrow screens: covers rotate every 5 s. `prefers-reduced-motion`: static.
+- **Search console:** `HeaderFilter` restyled only via CSS (menus open upward); logic untouched.
+- **Promotional banner:** live catalog readout (total games, platform/genre/mode counts from enums), scroll-driven platform marquee linking to `/game?input=` platform filters, existing `FiberContainer` 3D shelf in a cut-corner panel.
+- **Homepage-only header skin:** `LayoutHome` adds `.gv-home-shell`; Top nav restyled under it. `Top.tsx`/`Footer.tsx` unchanged.
+- **Fonts:** Archivo, Unbounded, JetBrains Mono linked in `_document.tsx` (used only inside `.gv-home`).
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| Live homepage in headless Chrome (CDP), 1440×900 scroll states, 820px, 390px mobile UA | Renders; no GSAP/GraphQL errors |
+| Hero filter → Search | Pushes the same `/game?input=` shape (`platformList`/`genreList`/`typeList`) and `/game` renders results |
+| Advanced filter modal | Opens with modes/text/year/price controls |
+| Not exercised | Logged-in header state, Safari/Firefox, real touch devices |
+
+## Frontend Redesign (gameverse-next) — Homepage chapter 01: Trending ("Level select")
+
+- **`TrendGames.tsx`:** renders its own chapter markup (no longer uses the shared `HomeSection`). Query, `defaultProps` (likes DESC, limit 8), `likeGameHandler`, refetch and alerts unchanged. Section keeps `id="trending-games"`.
+- **New `TrendPlate.tsx`:** cut-corner cover, rotated Unbounded like counter (real `gameLikes`), `No. 0n` index, Upcoming flag, uppercase title as a paper label straddling the cover edge, genres/platforms, price (discount aware), views, like button (same handler and aria). Whole plate clicks through to `/game/detail?id=` via a hit layer; the title link is the keyboard target.
+- **Motion (GSAP):** ≥900×560 without reduced motion — sticky stage, vertical scroll drives the horizontal track (section height = track overflow + viewport, recomputed on refresh), progress line, covers pan inside frames (containerAnimation). Otherwise the existing `useHomeRail` scroll-snap rail with prev/next controls.
+- **Styles:** white sheet with notched top edge over the black banner; scoped under `.gv-trend` / `.gv-plate`. `HomeGameCard` (trend variant now unused), `HomeSection` and `HomeRail` were not modified.
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| 1440×900 scroll states (enter, start, 45%, 99%, exit) | Track travels, progress fills, labels above covers |
+| Like while logged out | Existing "Please login first!" alert |
+| Click on cover | Navigates to `/game/detail?id=…` |
+| 390px mobile UA | Scroll-snap rail with controls |
+| Hero regression | Unchanged |
+
+## Frontend Redesign (gameverse-next) — Homepage chapters 02–07 (homepage complete)
+
+All homepage sections now follow the "Boot Sequence" direction. Queries, variables, `defaultProps`, like handlers, refetches and alerts are unchanged in every component; only render markup, new presentation components and scoped styles changed.
+
+- **02 Collection (`PopularGames` + new `CollectionCard`):** ultraviolet field, scroll-scrubbed fan of the 7 most viewed games (centre = #1), Unbounded odometer counting to `metaCounter.total`, "See all games". Fallback: snap row.
+- **03 Leaderboard (`TopGames`):** night, pinned 540vh scene — scattered cover tiles converge, full-bleed cover per rank, giant rank numeral, detail (meta, price, views, like), live-highlighted ranked list with per-row like buttons, cartridge exit. Fallback: static scene for #1 + full list.
+- **04 Character select (`TopAgents` + `TopAgentCard`):** giant AGENTS word, greyscale cut-corner portraits with parallax depths; hover/focus selects an agent (colour + readout of games/likes/views + View profile). "See all agents" kept.
+- **05 Comms (`CommunityBoards` + `CommunityCard`):** signal-green field; news plates settle from a tilt on scroll; free board as a dated log (author, views, likes). Empty states link to the boards. Mobile placeholders untouched (not rendered on mobile index).
+- **06 World map (`Events`):** angled event plates that tilt in, level at centre, tilt out; titles/descriptions as paper labels over the art edge. Static data unchanged.
+- **07 Credits (new `HomeCredits` in `LayoutHome`):** looping GAMEVERSE wordmark under the footer, speed coupled to scroll velocity; homepage-only footer skin (black, mono labels, link spacing fix). Mobile footer container pinned to viewport width on the homepage.
+- **Chapter index (new `HomeChapters`):** fixed right-edge chapter nav (≥1200px), IntersectionObserver active state, smooth jump (respects reduced motion), difference blend for any background.
+- **Shared:** `homeMotion.ts` (scene media query, `pad`, cover/detail helpers); sheet-edge mixin with notched tabs between chapters; scrolled header made near-opaque.
+- `HomeSection.tsx` and `HomeGameCard.tsx` are no longer imported (left in place); the old `.gv-section/.gv-card/.gv-bento/.gv-ranks/.gv-agents/.gv-community/.gv-events` CSS is now unused.
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| 1440×900 scroll states for every chapter | Rendered as designed after fixes (leaderboard spacing, AGENTS width, event copy legibility, chapter-label overlap) |
+| 390px mobile UA | No horizontal overflow (`scrollWidth` 390); Trend/Popular/Top/Agents fallbacks |
+| 820px desktop window | Static fallbacks for all chapters |
+| Leaderboard like (logged out) | Existing "Please login first!" alert; list highlight matches scene |
+| Agent hover/focus | Selection readout updates |
+| Chapter index jump | Lands on target section |
+| Links | Game detail, community detail, agent detail hrefs unchanged |
+
+## Homepage scroll restoration on Back (gameverse-next)
+
+- **Problem:** returning from a game/agent page landed at the top of the homepage. Next's pages router does no scroll restoration by default, the homepage is short right after mount (lists fill in `onCompleted`, scroll-scene heights are set in effects), and GSAP ScrollTrigger switches `history.scrollRestoration` to `manual`. `scroll={false}` on links is unrelated (it only affects forward pushes).
+- **Fix:** new `libs/hooks/useHomeScrollMemory.ts`, called once in `LayoutHome`. Saves scroll position (as chapter anchor + offset) with Next's history-entry `key` on `routeChangeStart`; on mount, restores only when the current history entry has the same key (Back/Forward), re-applying the position each frame until the layout is stable (max 4 s) and aborting on any user input.
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| Desktop: Trending mid-track → game → Back | Same `scrollY` (4927), same track position |
+| Desktop: Leaderboard rank → game → Back | Same `scrollY`, same rank scene |
+| Desktop: Agents → agent page → Back | Same `scrollY` |
+| Mobile UA: Agents → agent page → Back | Same `scrollY` |
+| Fresh visit via logo | Starts at top |
+
+## New logo — "Cartridge G" (gameverse-next)
+
+- Replaced the coral polyhedron logo with a game-specific mark: an acid-green (`#D7FF3A`) cartridge with the site's notched corner, a black G whose crossbar is a D-pad, and a GAMEVERSE wordmark in custom squared, chamfered capitals (pure vector, no font dependency).
+- Same file paths, so no component changes: `public/img/logo/logoWhite.svg` (mark + white wordmark, 260×52, header/footer), `logoText.svg` (mark only, 40×40, admin sidebar, join page, community pages), `favicon.svg` (mark without outline, 64×64).
+- `pages/_document.tsx`: favicon link type `image/png` → `image/svg+xml`.
+- `scss/pc/community/community.scss` and `detail.scss`: community logo image no longer cropped to a circle (`object-fit: contain`).
+
+| Check | Result |
+| --- | --- |
+| Rendered 16/32/40/160px marks on white, black, `#181a20` | Legible; outline holds on white |
+| Header on `/`, `/account/join`, `/community` | New wordmark, no layout shift |
+| Join form and community sidebar mark | Correct, full cartridge shape |
+| Homepage footer | New wordmark at 52px height |
+| `/_admin` sidebar | Not rendered (needs admin login); CSS is 90×90 square, so no distortion expected |
+| `tsc --noEmit` | Passed |
+
+## Game image quality — in-place replacement tool (gameverse-next)
+
+- **Diagnosis:** the backend stores uploads byte-for-byte (no resize/recompression). All 31 files in `uploads/game` are JPEGs (named `.png`) of 299–738 px width — preview-size sources, upscaled 2–4× by the redesign's full-bleed and portrait placements.
+- **Tool:** `scripts/replace-game-images.mjs` (`yarn images:replace`), plain Node, no new dependencies. `--init` creates `game-images/<Game Title>/` folders from the live API plus a README with size guidance; dry run maps files (name order, first = cover) to each game's existing upload filenames and shows sizes/warnings; `--apply` backs originals up to `game-images/_backups/<timestamp>/` (with manifest) and overwrites in place, so no database edits; `--restore <dir>` undoes. JPEG/PNG only (backend `validMimeTypes`); warns under 1920 px (cover) / 1280 px (others). `game-images/` is gitignored.
+- **Verified** on a scratch copy of the uploads: mapping, warnings, WebP rejection, unmatched folder note, apply (dimensions changed), backup + restore (byte-identical). Real uploads untouched; 10 empty game folders + README left ready for the user.
+
+## Game images replaced with official high-resolution art (gameverse-next)
+
+- All 31 game image slots replaced in place via `yarn images:replace --apply` (no database changes). Backup of the originals: `gameverse-next/game-images/_backups/2026-10-08T15-44-20-441Z/` (undo with `--restore`).
+- Sources (official publisher/store assets): Steam store `library_hero_2x` key art (3840×1240, cropped to 2048×1240 around the subject) and 1920×1080 screenshots for Apex Legends, Elden Ring, The Witcher 3, GTA V, PUBG, Counter-Strike 2; PlayStation Store 3840×2160 key art/screenshots for Genshin Impact; Riot's official VALORANT wallpaper packs (4K, cropped to remove logos); App Store screenshots for Minecraft and Clash of Clans (2208–2732 px, marketing captions cropped off). Screenshots with baked-in logos were excluded.
+- Note: publisher-owned promotional art — fine for development/portfolio, replace with licensed assets before any commercial launch.
+- Verified in headless Chrome: hero, Trending, Collection and Leaderboard render sharp at 1440×900.
+- Follow-up: Clash of Clans and Minecraft covers replaced with official key art — Supercell's website hero (Electro Dragon + Barbarian King, 1681×729, the largest Supercell publishes) and the PlayStation Store Minecraft background art (Steve & Alex, 1920×1080, no logo). Backup: `game-images/_backups/2026-10-08T15-51-07-803Z/`.
+
+## Events section photos (gameverse-next)
+
+- Replaced the four placeholder SVGs with 2400 px photos under the Unsplash License (free, commercial use allowed, attribution optional): `public/img/gameverse/event-1.jpg` Indie Showcase — expo booth (Les Taylor, `rBMDVBAdRu4`); `event-2.jpg` Co-op Weekend — two controllers (JESHOOTS.COM, `photo-1493711662062`); `event-3.jpg` Retro Game Night — neon arcade (Carl Raw, `photo-1511512578047`); `event-4.jpg` Speedrun Marathon — gamer with glowing headset (Sean Do, `EHLd2utEf68`).
+- `Events.tsx`: `imageSrc` paths `.svg` → `.jpg`; old `event-1..4.svg` removed (no other references). `tsc --noEmit` passed; verified in Chrome (images load at 2400 px).
+
+## 3D shelf tiles (gameverse-next)
+
+- `public/img/gameverse/tile-1..8.jpg` (used only by `FiberContainer`'s 3D shelf in the homepage banner) replaced with 1600×1000 crops of the official key art of eight popular games: tile-7 Elden Ring, tile-8 Genshin Impact, tile-1 GTA V, tile-4 The Witcher 3, tile-5 VALORANT, tile-6 Apex Legends (re-cropped from the 3840 px original to keep both characters), tile-2 Counter-Strike 2, tile-3 Minecraft. Same paths, no code changes; drei `<Image>` cover-fits each tile. Verified rendering in Chrome (WebGL via SwiftShader).
+
+## Community seed articles (local database)
+
+- Created three USER accounts via `signup` — `PixelPilot`, `RetroRiley`, `NightOwlGG` (demo data; password shared with the project owner, not stored in the repo).
+- Posted 8 articles via `imageUploader` (target `article`) + `createBoardArticle`, two per board: NEWS "Ten games are now in the catalog", "How the Top Ranked list works"; FREE "What was your very first console?", "Anyone up for co-op this weekend?"; RECOMMEND "Why The Witcher 3 still holds up", "Cozy games for a rainy evening"; HUMOR "My cat is our new team captain", "\"One more match\" at 2 AM". Images are Unsplash-licensed photos (1600 px) stored in `uploads/article/`.
+- Verified on the homepage Comms section and `/community`.
