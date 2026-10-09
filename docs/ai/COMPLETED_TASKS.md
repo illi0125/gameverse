@@ -612,3 +612,197 @@ All three Support pages were static placeholders (no queries, no handlers). They
 | `next dev -p 3100` → all six admin routes | Compile, 200 (server stopped afterwards) |
 | Notice / inquiry list, count and create inputs vs live API | Accepted by schema validation (anonymous calls stop at the auth guard) |
 | Signed-in visual check, creating / answering / status changes | **Not done** — no browser in this session; would also change real data |
+
+## Help (CS) page redesign (gameverse-next, 2026-10-09)
+
+- **Layout:** `/cs` moves from `LayoutBasic` (legacy banner header) to `LayoutCatalog` like the other redesigned pages; root `.gv-catalog.gv-cs`. Routing unchanged: `?tab=notice|faq` (default `notice`) via the same `changeTabHandler`; `inquiry` added as a third tab. The `device === 'mobile'` placeholders ("CS PAGE MOBILE", "FAQ MOBILE"…) are replaced by the responsive page.
+- **Chapters:** 00 Help desk (void hero: masked headline with the page's one load reveal, live readout of FAQ/topic/notice counts, topic shortcuts, latest event/notice plate, help search console) → Desk (paper: 01 FAQ / 02 Notices / 03 Ask us tabs) → 04 Still stuck (signal: Ask the team, Ask the community → `/community?articleCategory=FREE`) → footer.
+- **FAQ (`Faq.tsx`):** one query for every published FAQ (`limit 200`, original order) instead of one per topic; topic rail with real counts (sticky on desktop, horizontal rail below 1100px), numbered questions, one answer open at a time (as before), instant search over question and answer with highlighted matches and an empty state.
+- **Notices (`Notice.tsx`):** same query and order; dated log with Unbounded numbers, Signal "Event" flag, Read more for long bodies.
+- **Ask us (`Inquiry.tsx`, was a placeholder):** uses the Stage 0 member API (`createInquiry`, `getMyInquiries`) — no backend change. Topic chips, title (3–100) and message (5–2000) with counters and inline errors, sent confirmation; history with status (Waiting for reply / Answered / Closed), the team's reply, Show more. Signed out: sign-in gate; with a saved token it waits for the session restore instead of flashing the gate.
+- **Files:** `pages/cs/index.tsx`, `libs/components/cs/{Faq,Notice,Inquiry}.tsx`, new `libs/components/cs/csMeta.ts`, `scss/pc/cs/cs.scss` (legacy `.cs-page` styles replaced).
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| Headless Chrome 1440 (CDP), all three tabs | Render; counts 29 answers / 7 topics / 2 notices; accordion single-open; topic switch; search "password" → 1 match highlighted; no-match empty state; Clear; Jump-to shortcuts; tab URLs `?tab=faq|inquiry` |
+| 390 mobile UA | `scrollWidth` 390 (topic rail scrolls inside its own container) |
+| 820 desktop | 960 / 805 — caused by the shared header (`user-box`, language button) and chat widget; identical on the approved Community page, not changed here |
+| Not exercised | Signed-in Ask us (no test account in this session; sending would create a real inquiry) |
+
+## Log in / Sign up redesign (gameverse-next, 2026-10-09)
+
+- **Layout:** `/account/join` moves from `LayoutBasic` (legacy "Login/Signup" banner) to `LayoutCatalog`; root `.gv-catalog.gv-auth`. One night scene: the top-ranked game cover as duotone atmosphere (same `GET_GAMES` request as the homepage hero) and as a sharp cut plate linking to the game, a headline that swaps with the mode ("Welcome back." / "Press start."), real catalog readout, and the form on a cut paper plate. The `device === 'mobile'` placeholder ("LOGIN MOBILE") is replaced by the responsive page.
+- **Unchanged logic:** `input` state, `loginView`, `viewChangeHandler`, `handleInput`, `doLogin` / `doSignUp` (same `logIn` / `signUp` calls, same `referrer` redirect), same button-disabled rule, member type values `USER` / `AGENT` (now a two-option radio, was two checkboxes acting as one).
+- **Frontend-only improvements:** password field is `type="password"` (was plain text) with a show/hide toggle; `autocomplete` hints; real `<form>` so Enter submits; inline errors mirroring the API limits (nickname 3–12, password 5–12, phone required) block a request that would fail; "Logging in…" / "Creating account…" busy state prevents double submits; `console.warn` / `console.log` of the input (which printed the password) removed.
+- **Removed (did nothing):** "Remember me" checkbox (no state, the session always persists) and the empty "Lost your password?" link → replaced by "Forgot your password? Find help" → `/cs?tab=faq` (the FAQ answer for this topic).
+- **Files:** `pages/account/join.tsx`, `scss/pc/account/join.scss` (legacy `.join-page` styles replaced).
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| Headless Chrome 1440 (CDP, real key input) | Both modes render; switch via tabs and the bottom link; submit disabled until filled; short values → inline errors, no request; reveal toggles `password`/`text`; Developer selects `AGENT`; title per mode |
+| Real failed login (unknown nickname) | Click and Enter both submit with busy state; existing `logIn` → `logOut()` reloads the page, no token stored (unchanged behaviour) |
+| 390 mobile UA | `scrollWidth` 390; headline lines not clipped |
+| 820 desktop | 960 / 805 from the shared header + chat widget (same as Community / CS) |
+| Not exercised | Successful sign-up (would create a real account), successful login (no test credentials) |
+
+### Login / sign-up error handling fix (approved 2026-10-09)
+
+- **Cause:** `libs/auth` matched the old Nestar messages ("Definer: login and password do not match", "Definer: user has been blocked!"), which the Gameverse API never sends, so its own alert never fired; `logIn` / `signUp` then caught the error and called `logOut()`, which reloads the page. The Apollo error link had already opened a raw-message SweetAlert, which the reload wiped. A network error also crashed on `graphQLErrors[0]`.
+- **Fix:** `requestJwtToken` / `requestSignUpJwtToken` throw a readable message mapped from the API's `Message` values (unknown nick, wrong password, blocked, nick/phone in use; validation details; network; generic). `logIn` / `signUp` rethrow instead of `logOut()` + reload. The join page shows one `sweetMixinErrorAlert` (not awaited, so the form is usable at once) and does not redirect. `apollo/client.ts` error link skips its global alert for the `Login` and `Signup` operations only. Success path (token storage, `updateUserInfo`, referrer redirect) unchanged; debug `console.log`s removed.
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| Unknown nickname (Enter) | One alert "No account with that nickname…", no reload, fields kept, no token, `?referrer` kept |
+| Wrong password for an existing account | One alert "Wrong password. Please try again.", no reload |
+| Sign up with a taken nickname | One alert "That nickname or phone number is already in use.", stays on Sign up with fields kept, nothing created |
+| Not exercised | Successful login / sign-up (no credentials were provided) |
+
+## Live chat widget redesign (gameverse-next, 2026-10-09)
+
+- **Scope:** `libs/components/Chat.tsx` (default export, rendered by the desktop branches of LayoutHome / LayoutBasic / LayoutFull / LayoutCatalog — integration untouched). Same socket contract and logic: `socketVar` / `userVar`, `onmessage` switch on `info` / `getMessages` / `message`, `socket.send({ event: 'message', data })`, empty-message alert, `handleOpenChat`, `getInputMessageHandler`, `getKeyHandler`, `onClickHandler`, launcher reveal after 100 ms and hide on route change, `ScrollableFeed` auto-scroll.
+- **Visuals (`scss/pc/chat/gvChat.scss`, legacy `.chatting` block removed from `main.scss`):** ink launcher with a Signal icon cell and mono "Live chat" label (inverts while open); window as a cut plate — black HUD header (`00 Comms` chip, LIVE CHAT title, live status), paper message area, theirs = paper bubbles with avatar, mine = ink bubbles, notched last bubble of each group; composer with Signal send button when there is text. z-index 1040 (above the header, below SweetAlert 1060 and MUI modals 1300).
+- **Frontend-only additions:** unread counter for other people's messages that arrive while closed (badge + launcher `aria-label`, cleared on open); sender grouping (name on the first, avatar on the last of consecutive messages; guests share one group since the contract has no guest id); connection readout from socket `open` / `close` / `error` listeners (Connecting / N online / Offline) and a guarded send when not connected (was an exception); focus to the input on open, Escape closes and returns focus to the launcher; closed window is `inert` + `aria-hidden`; placeholder names the sender ("Message as Leo" / "Message as Guest"); `socket` undefined guard; long text wraps; narrow windows (<640px) get a square launcher and a full-width sheet with `dvh` / safe-area sizing; reduced motion respected. No timestamps or date separators: messages carry none.
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| Live socket, 1440 (CDP) | Launcher bottom-right; window `inert` while closed; 3 messages from a second guest client while closed → badge "3", label "3 new messages"; open → focus in input, badge cleared, status "1 online"; history (`getMessages`) on reload; grouping name-first / avatar-last; long unbroken text wraps (no horizontal scroll), feed at bottom; empty send → "Message is empty!"; Escape closes, focus back on launcher |
+| 600px window | Full-width sheet 12px from the edges, launcher 52×52 |
+| Not exercised | Own-message (ink) bubbles as a signed-in member — guest messages are never "mine" (unchanged identity rule) |
+| Note | Three `[test]` guest messages were sent to the local dev socket (in-memory, last 5 kept, cleared on API restart) |
+
+### Live chat follow-up: own messages on the right, close on outside click (approved 2026-10-09)
+
+- **Cause (own messages on the left):** the chat socket sends the JWT in its URL once, when the app first loads (`reconnect: false`). Logging in on `/account/join` does not reload the page, so the socket stayed a Guest connection: the server attached no member to the messages, they never matched `userVar._id`, and other people saw them as "Guest". Guests' own messages could never match either.
+- **Fix:** `apollo/client.ts` exports `reconnectChatSocket()` (closes the current chat socket, opens a new `LoggingWebSocket` with the current token → `socketVar`); `libs/auth` `logIn` / `signUp` call it after storing the token (no GraphQL subscriptions use this socket). `Chat.tsx` also remembers texts sent from this tab and marks their echo as mine, so a Guest's own messages are on the right too; "mine" = sent from this tab, or `memberData._id === userVar._id` (signed in on any device). Mine never group with another Guest; unread ignores own messages.
+- **Outside click:** while open, a `pointerdown` anywhere outside the widget closes it (inside the window or on the launcher does not; SweetAlert popups opened by the chat do not count as outside). Escape and the X still close.
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| Browser (guest) sends two messages, another device sends one | Browser: own two on the right ("You", grouped), other device's on the left ("Guest") |
+| Pointer down inside the window | Stays open |
+| Pointer down on the page | Closes |
+| Launcher | Still toggles open / closed |
+| Not exercised | Signed-in reconnect after log in (no credentials in this session) |
+
+## SweetAlert restyle (gameverse-next, approved plan 2026-10-09)
+
+- **Single entry point:** every popup goes through `libs/sweetAlert.ts` (no other file imports `sweetalert2`), so the 87 call sites are untouched. All exports keep their names, parameters and results; `sweetConfirmAlert` / `sweetLoginConfirmAlert` still resolve `true` only on `isConfirmed`.
+- **How:** a private `GvSwal = Swal.mixin({ buttonsStyling: false, customClass: {...}, showClass, hideClass })` replaces `Swal.fire` in every export; `iconHtml` square glyph chips (✓ ! ? i) replace the round animated icons; button colors removed (CSS owns them); explicit Confirm / Cancel labels ("Login" kept). The toast is `GvSwal.mixin({ toast: true, ... })` with the same timer and `enable_forward` reload.
+- **Styles:** new `scss/pc/common/gvAlert.scss`, imported in `scss/pc/main.scss` after the homepage partial (global for desktop, mobile and admin). Paper plate with the cartridge notch and ink border, uppercase Archivo title, square chips (success Signal, error red, question Ultraviolet), mono buttons (Cancel outline first, Confirm solid ink with the cut, Signal fill on focus), stacked full-width under 480px; ink toast with a Signal progress bar (column gap only: Swal's toast grid spans the icon over 99 rows); scale-in / fade-out motion, fade only with reduced motion; Swal z-index 1060 kept.
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| All exports present (module loaded from the dev bundle) | 11 / 11 |
+| `sweetConfirmAlert`: Confirm / real Enter / Cancel / Escape / backdrop | true / true / false / false / false |
+| `sweetLoginConfirmAlert`: "Login" | true |
+| Error, error handling, centered success, toast | Styled; toast 340×56 top-end, auto-dismisses |
+| 390 mobile UA | Popup 16px from both edges, buttons stacked, no overflow |
+
+## Homepage intro "Press Start" (gameverse-next, approved plan 2026-10-09)
+
+- **Reference:** `design-references/reference1.mov` (3.5s: letter-by-letter headline with a colour-flicker trail, side labels, twinkling sparkles, flood of growing circles into the site). Adapted to the design system instead of copied: Void stage, Archivo 850 `PRESS / START / GAMEVERSE`, flicker in Signal / UV / Haze / paper, mono `PLAYER 1` · `READY`, Signal ■ and Haze + sparks, cut-corner (`gv-cut`) UV → Signal plates instead of circles.
+- **Timing (~3.8s):** typing 0–1.6s (70ms per letter, 3-letter flicker trail settling to paper), labels 0.8s, sparks 1.3–2.4s, flood 2.5–3.3s, stage lifts `yPercent -100` 3.3–3.8s while the hero's existing load reveal starts (hand-over at 3.42s). Any key or press skips (seek to the flood, `timeScale 2.6`, ~0.5s). Reduced motion: static headline 0.8s, 0.3s fade. 6s fail-safe removes the overlay; scroll locked on `<html>` while it plays.
+- **Once per session:** `introGate.ts` (`gv-intro-seen` in sessionStorage, written at the hand-over, so a reload mid-intro replays it). `_document.tsx` adds a pre-paint script + inline rule (`html[data-gv-intro=skip] .gv-intro:not(.is-playing)`) so repeat loads and client-side returns to `/` never flash the overlay.
+- **Hero:** `HomeHero` sets its words/rules hidden and runs the same reveal tweens via `onIntroDone` (immediately when there is no intro). Scroll timeline and marquee unchanged.
+- **Files:** new `libs/components/homepage/{HomeIntro.tsx,introGate.ts}`, new `scss/pc/homepage/homeIntro.scss` (imported in `scss/pc/main.scss`), `libs/components/layout/LayoutHome.tsx` (both branches), `libs/components/homepage/HomeHero.tsx`, `pages/_document.tsx`, `docs/GAMEVERSE_DESIGN_SYSTEM.md` (Intro row).
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| Headless Chrome 1440 (CDP), frames 0.3–4.3s | Typing 12 → 19 letters, labels, sparks, plate flood, lift into hero; hero word held at `yPercent 110` during the intro, 0 after; overlay removed; scroll restored; key stored |
+| Reload in the same tab | Overlay `display:none` from the first sample, hero reveal plays immediately |
+| Escape at 0.8s | Overlay gone 0.55s later |
+| Reduced motion (emulated) | Static headline, removed ~1.1s |
+| 390 mobile UA | `scrollWidth` 390; labels stacked above/below the headline without overlap |
+| Not exercised | Real Archivo rendering in headless (Google Fonts fell back to Poppins, same as the hero) |
+
+## Site cursor (gameverse-next, 2026-10-09)
+
+- **Reference:** `design-references/reference2.mov` (6.8s): native pointer hidden; a small white dot on the pointer and a ~32px thin white ring that eases after it (~70–80px behind on fast moves, centred at rest); a soft pink trail from the page's fluid background that fades when the pointer stops; no hover change.
+- **Gameverse version (`libs/components/common/GvCursor.tsx`, mounted once in `pages/_app.tsx`):** 6px square dot + 36px cut-corner ring (SVG, the cartridge notch) easing at 0.16/frame (frame-rate independent), UV radial afterglow at 0.07/frame that fades ~0.7s after rest (replaces the fluid trail). White with `mix-blend-mode: difference`: dark on paper, light on void, lime on UV. One rAF loop that sleeps when settled; positions via `translate3d` on refs (no React renders).
+- **States:** clickables (`a`, `button`, ARIA button/tab/menuitem/option/checkbox/radio/switch, `label`, `summary`, `.MuiButtonBase-root`, `[data-cursor="hover"]`) → ring scales 1.55 and fills (inverts what's under it), dot hides; press → 0.8 (1.3 on clickables); text inputs / textarea / contenteditable → custom cursor hidden, native I-beam; leaving the window or entering an iframe → hidden until the next move.
+- **Scope:** only with `(hover: hover) and (pointer: fine)` (re-checked live); touch keeps the system behaviour. Reduced motion: ring follows instantly, no glow. `cursor: none` is applied through `html.gv-cursor-on` only while active. z-index 2147483000+ (above SweetAlert and MUI modals).
+- **Files:** new `libs/components/common/GvCursor.tsx`, new `scss/pc/common/gvCursor.scss` (imported in `scss/pc/main.scss`), `pages/_app.tsx`, `docs/GAMEVERSE_DESIGN_SYSTEM.md` (Cursor row).
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| Headless Chrome 1440 (CDP mouse events) | Hidden until the first move; 400px jump: ring 58% there after 60ms, settled ~400ms; afterglow visible while moving |
+| Hover (logo link, join button) / press | Ring fills and inverts the logo; `gv-cursor-down` on press |
+| Text input (`/account/join`) | Custom cursor opacity 0, native `text` cursor |
+| Void hero / UV games hero / white paper | Readable on all three (light, lime, dark) |
+| Reduced motion | Ring = pointer every frame, glow off |
+| Touch emulation (coarse pointer) | Not enabled; native cursor untouched |
+| Not exercised | Real trackpad feel, Safari / Firefox |
+
+## One responsive site — phones (gameverse-next, approved plan 2026-10-09)
+
+- **Problem:** in Chrome's iPhone view the homepage was a thin strip on the left, with the avatar far away at the right edge. Fixed desktop widths (`#pc-wrap .container` 1300px, header `.router-box` 617px / `.user-box` 270px, footer 1300px) made the page wider than the screen, so the browser zoomed out to fit it. `useDeviceDetect` checks only once, when the page mounts, so turning on device mode kept the desktop version. After a reload, phones got the leftover Nestar mobile version instead: plain text links, "HEADER FILTER MOBILE" / "EVENT CARD"-style stubs, and no chat.
+- **One layout:** `LayoutHome`, `LayoutCatalog`, `LayoutBasic`, `LayoutFull`, `Top`, `Footer`, `pages/index.tsx` and the homepage `Events`, `CommunityBoards`, `CommunityCard`, `HeaderFilter` no longer branch on `device`. Every device renders `#pc-wrap` (with Chat). `useDeviceDetect` is kept for pages not yet migrated. `TrendGames` / `TopAgents` still use it only for their `is-compact` class.
+- **Fluid shell:** `#pc-wrap .container` and `#footer .footer-container` are `min(1300px, 100% − 2 × clamp(16px, 4vw, 40px))`. Header nav and user box are `auto` / flex. Below 900px the header is 64px (nav and language hidden, menu button shown), and the footer stacks (left column auto height, wrapping link columns, column bottom line). Below 480px the Login button moves into the drawer.
+- **Menu drawer (`Top.tsx`, `scss/pc/common/gvNavDrawer.scss`):** MUI `Drawer` from the right: Void panel, numbered display links (My Page when signed in, active page in Signal, `aria-current`), language buttons using the same `langChoice`, cut-corner Login / Register or ghost Logout (`logOut()`). Closes on the X, Escape, backdrop and any route change. The menu button has `aria-expanded` / `aria-controls`.
+- **Docs:** "Small screens" row in `docs/GAMEVERSE_DESIGN_SYSTEM.md`.
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| Headless Chrome, iPhone UA, after a real load: `/` at 430 and 390 | `scrollWidth` = viewport. Header, hero, filter, all chapters, footer and credits fit; rails scroll inside themselves |
+| iPhone UA 390: `/game`, `/developer`, `/community`, `/cs`, `/account/join`, `/about` | No horizontal overflow |
+| Desktop 820: `/`, `/game`, `/cs`, `/account/join` | No overflow (the earlier 960/805 overflow from the header is gone) |
+| Desktop 1440 | Homepage header and hero unchanged |
+| Drawer | Opens (`aria-expanded` true), Home marked active, Games link → `/game` and the drawer closes, Escape closes |
+| Not exercised | Signed-in drawer (Logout), language switch from the drawer, real devices / Safari |
+
+**Follow-ups (one page at a time):** `pages/member`, `pages/about`, `MemberMenu`, `MemberGames`, `MemberArticles`, `common/GameBigCard`, `common/CommunityCard` still render their old mobile markup on phones, now inside the new header and footer.
+
+## Mobile homepage (gameverse-next, approved plan 2026-10-10)
+
+- **Audit (before):** 360 / 390 / 430px iPhone UA + 844×390 landscape. 360px scrolled sideways by 8px (the indented "COMMUNITY." line, which also widened the fixed header). Leaderboard spotlight and the Developers readout never changed on touch (scroll-scene / hover only). Hero showed no headline or art on the first screen. Developers 1,549px and Events 2,038px tall. Tap targets 15–36px, mono text 11px, WebGL shelf running on phones. Page 10,337px at 390 (13,327px landscape).
+- **Approach:** new `scss/pc/homepage/homeMobile.scss` (imported after `homepage.scss`). Every rule sits behind `max-width: 899px`, phone landscape (`max-width: 932px and max-height: 520px`) or `hover: none`, so desktop rules are untouched. Markup changes are additive; no queries, mutations, routes or data changed.
+- **Chapters:**
+  - Hero: headline first, then cover plate, then copy and CTAs, then a 2×2 console with a full-width Search bar; menus open downward over the banner. Landscape: two columns. Cover ticks are tappable, and the 5s timer restarts on every change and pauses off screen.
+  - Banner: the 3D shelf becomes a CSS strip of the same tiles on narrow / touch screens (`HomeShelf.tsx`, `next/dynamic`, so three.js loads only where it shows).
+  - Trending: square covers, like counter as a tab on the cover, "Swipe" indicator.
+  - Collection: one-time deal-in; the count ticks up on appear.
+  - Leaderboard: compact spotlight and list on about one screen; rank + thumbnail button picks the spotlight (`useMediaQuery`, so desktop markup is unchanged); one-time cover assemble.
+  - Developers: centre-snapping portrait rail selects the developer.
+  - Comms: date moved into the meta line; one-time tilt settle.
+  - Events: swipe rail with arrows.
+- **Shell:** 44px touch targets (menu button, Login, logo link, likes, row titles, board headings, footer links and input). Mono text ≥ 12px. Hover resets and press states under `hover: none`. Chat launcher is icon-only in phone landscape and has no sticky hover. The advanced-search modal is a fluid, scrollable sheet on phones.
+- **GSAP:** `MOBILE_MOTION_QUERY` in `homeMotion.ts`: short, unpinned, unscrubbed tweens with `once: true`. `ScrollTrigger.config({ ignoreMobileResize: true })`. The credits loop pauses off screen. Removed the dead `useDeviceDetect` `is-compact` classes from `TrendGames` / `TopAgents`.
+- **Files:** new `scss/pc/homepage/homeMobile.scss`, `libs/components/homepage/HomeShelf.tsx`. Changed `scss/pc/main.scss` (import, 44px header controls), `scss/pc/chat/gvChat.scss`, `libs/components/layout/LayoutHome.tsx`, `homepage/{HomeHero,TrendGames,PopularGames,TopGames,TopAgents,CommunityBoards,Events,HomeCredits}.tsx`, `homepage/homeMotion.ts`, `docs/GAMEVERSE_DESIGN_SYSTEM.md` ("Mobile homepage" section).
+
+| Check | Result |
+| --- | --- |
+| `yarn tsc --noEmit` | Passed after every phase |
+| Desktop 1440×900 and 1280×800, 19 scroll positions each, pixel diff against two pre-change baselines | Page heights identical (18,420 / 20,515px); remaining differences only in frames that also differ between the two baselines (scrub timing, late images, credits marquee) |
+| 360 / 390 / 430 / 844×390 | `scrollWidth` = viewport; no tap target under 44px except stretched card links; no text under 12px; no WebGL canvas; no console errors |
+| Page length | 390: 10,337 → 8,180px; landscape: 13,327 → 8,486px |
+| Touch (CDP touch events, 390) | Tick switches cover; Platform menu opens below and sets "PC"; modal fits 16px from both edges; Swipe bar 14% → 39%; row 4 pick → PUBG spotlight, scrolled clear of the header; centring the 4th portrait selects Miyazaki; Events arrow scrolls 346px |
+| Reduced motion | No autoplay, no cover tiles, static count; every tap control still works |
+| Intro at 390 | Plays and hands over to the new hero |
+| Not exercised | Real iOS Safari / Android Chrome, signed-in likes from the new targets |
+
+**Follow-ups:** the advanced-search modal still uses the legacy Nestar styling (rounded, coral) on every device. The footer label reads "nee live … Support?" on desktop too (copy, not layout). Next page per the plan: Games listing.
+
+## Page scrollbar (gameverse-next, 2026-10-10)
+
+- **Before:** the page scrollbar was hidden everywhere (`scrollbar-width: none`, `body::-webkit-scrollbar { display: none }` in `scss/pc/main.scss`); `scss/app.scss` still carried an unused Nestar grey scrollbar.
+- **Now:** `scss/pc/common/gvScrollbar.scss` (imported in `main.scss`), mouse / trackpad devices only. 10px Void track with an Ultraviolet thumb; hover light UV, drag Signal. Firefox gets the standard properties, guarded by `@supports not selector(::-webkit-scrollbar)` so Chrome 121+ keeps the WebKit hover / drag states. `scrollbar-gutter: stable`, MUI / SweetAlert2 body padding cancelled and the locked gutter painted Void. While the intro locks `<html>`, body no longer grows a second bar. Only `html` / `body` scrollbars are styled. The hide rules and the old grey scrollbar were removed. `body { overflow-y: scroll }` kept. No JS, GSAP or layout changes.
+
+| Check (Chrome headless, real scrollbars) | Result |
+| --- | --- |
+| 1440 and 820: `/`, `/game`, `/developer`, `/community`, `/cs`, `/account/join`, `/about` | 10px bar on every page; no horizontal overflow except `/about` at 820, which already overflowed with hidden scrollbars (legacy image, 851px) |
+| Homepage hero scrub, wheel (600px), End key (to max), thumb drag (→ 10,585px, scene scrubbed) | All work |
+| Hover / drag | Thumb `#8B78FF` / Signal |
+| MUI advanced-search modal, SweetAlert error | Header stays put (logo 65px, Login 1279px); gutter stays Void |
+| Intro | Content width 1430px during and after (no jump at hand-over) |
+| 390 touch emulation | No custom bar (native overlay), no gutter, touch scroll works |
+| `yarn tsc --noEmit` | Passed |
+| Not exercised | Safari (remote automation not enabled), Firefox (not installed) |
