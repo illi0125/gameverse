@@ -63,7 +63,8 @@ export class BoardArticleService {
 			const likeInput = { memberId: memberId, likeRefId: articleId, likeGroup: LikeGroup.ARTICLE };
 			targetBoardArticle.meLiked = await this.likeService.checkLikeExistence(likeInput);
 		}
-		targetBoardArticle.memberData = await this.memberService.getMember(null, targetBoardArticle.memberId);
+		// A deleted or missing author must not make the article unreadable (same rule as Game owners)
+		targetBoardArticle.memberData = await this.memberService.getMemberOrNull(targetBoardArticle.memberId);
 		return targetBoardArticle;
 	}
 
@@ -179,25 +180,22 @@ export class BoardArticleService {
 		return result[0];
 	}
 
+	/** Admin edit of any article; DELETE → ACTIVE restores it. The author's article counter follows status changes only. **/
 	public async updateBoardArticleByAdmin(input: BoardArticleUpdate): Promise<BoardArticle> {
 		const { _id, articleStatus } = input;
 
-		const result = await this.boardArticleModel
-			.findOneAndUpdate({ _id: _id, articleStatus: BoardArticleStatus.ACTIVE }, input, {
-				new: true,
-			})
-			.exec();
-		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
+		const previous = await this.boardArticleModel.findOneAndUpdate({ _id: _id }, input, { new: false }).lean().exec();
+		if (!previous) throw new InternalServerErrorException(Message.UPDATE_FAILED);
 
-		if (articleStatus === BoardArticleStatus.DELETE) {
+		if (articleStatus && articleStatus !== previous.articleStatus) {
 			await this.memberService.memberStatsEditor({
-				_id: result.memberId,
+				_id: previous.memberId,
 				targetKey: 'memberArticles',
-				modifier: -1,
+				modifier: articleStatus === BoardArticleStatus.DELETE ? -1 : 1,
 			});
 		}
 
-		return result;
+		return { ...previous, ...input } as BoardArticle;
 	}
 
 	public async removeBoardArticleByAdmin(articleId: ObjectId): Promise<BoardArticle> {

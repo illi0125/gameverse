@@ -17,6 +17,11 @@ export const availableGameSorts = [
 ];
 export const availableBoardArticleSorts = ['createdAt', 'updatedAt', 'articleLikes', 'articleViews'];
 export const availableCommentSorts = ['createdAt', 'updatedAt'];
+export const availableNoticeSorts = ['createdAt', 'updatedAt'];
+export const availableInquirySorts = ['createdAt', 'updatedAt', 'answeredAt'];
+
+/** Literal text for a case-insensitive $regex search (user input must not act as a pattern) **/
+export const escapeRegex = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // ----------------------------------------
 // IMAGE CONFIGURATION

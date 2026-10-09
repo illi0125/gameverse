@@ -73,6 +73,22 @@ npm run repair:game-owner -- --verify --game-id <game-id> --member-id <active-ag
 
 The command requires an orphan, non-deleted Game and an active AGENT replacement. Apply uses a transaction, changes ownership, and increments `memberGames` exactly once. Repeated apply is idempotent. Game reads keep `memberData` nullable and no longer misreport a missing owner as a missing Game.
 
+## Support Content API (2026-10-09)
+
+Notices, FAQ and 1:1 inquiries are real data now (previously the frontend hardcoded them and the admin CS pages showed placeholder rows).
+
+- **Notice module** (existing `notices` collection and schema): `NoticeCategory` gained `NOTICE` (announcements; `FAQ`, `TERMS` unchanged, legacy `INQUIRY` kept unused); new optional `noticeTopic` (`SupportTopic`: `GAMES, PAYMENT, PLAYERS, DEVELOPERS, MEMBERSHIP, COMMUNITY, OTHER`) groups FAQ entries. `NoticeStatus`: `HOLD` = draft, `ACTIVE` = public, `DELETE` = soft-deleted.
+  - Public: `getNotices(input: NoticesInquiry)` — `ACTIVE` only, one category, optional topic and title text (matched literally).
+  - ADMIN (`RolesGuard`): `getAllNoticesByAdmin`, `createNotice` (HOLD or ACTIVE), `updateNotice`, `removeNotice` (permanent, only after `DELETE`).
+- **Inquiry module** (new `inquiries` collection): topic, title (3–100), content (5–2000), `InquiryStatus` `PENDING / ANSWERED / CLOSED`, `answerContent`, `answeredBy`, `answeredAt`, `memberId`.
+  - Signed-in members (`AuthGuard`): `createInquiry` (always PENDING), `getMyInquiries` (own only).
+  - ADMIN: `getAllInquiriesByAdmin` (status/topic/title filters, author joined, nullable), `answerInquiry` (not while CLOSED), `updateInquiryByAdmin` (ANSWERED requires an existing reply), `removeInquiry` (only CLOSED).
+- **Seed:** `npm run seed:cs -- --dry-run | --apply | --verify` imports the former hardcoded public content (2 notices with their original dates, 29 FAQ entries in original order), authored by the first ACTIVE admin; idempotent by category + title. Applied to the development database on 2026-10-09 (31 inserted; a second run inserts 0).
+
+## Board article admin restore (2026-10-09)
+
+- `updateBoardArticleByAdmin` now matches any article (previously only `ACTIVE`), so an admin can restore a deleted article (`DELETE → ACTIVE`). The author's `memberArticles` counter changes only when the status actually changes (−1 on delete, +1 on restore). `removeBoardArticleByAdmin` still requires `DELETE`.
+
 ## Compatibility Boundary
 
 This release intentionally has no Property API alias or dual-read period. API and batch must be deployed together after a successful dry run during a write-maintenance window. The previous application build and migration snapshots are required for rollback.

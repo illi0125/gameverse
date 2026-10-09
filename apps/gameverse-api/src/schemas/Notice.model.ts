@@ -1,5 +1,5 @@
-import mongoose, { Schema } from 'mongoose';
-import { NoticeCategory, NoticeStatus } from '../libs/enums/notice.enum';
+import { Schema } from 'mongoose';
+import { NoticeCategory, NoticeStatus, SupportTopic } from '../libs/enums/notice.enum';
 
 const NoticeSchema = new Schema(
 	{
@@ -15,6 +15,12 @@ const NoticeSchema = new Schema(
 			default: NoticeStatus.ACTIVE,
 		},
 
+		/** FAQ grouping; empty for notices and terms **/
+		noticeTopic: {
+			type: String,
+			enum: SupportTopic,
+		},
+
 		noticeTitle: {
 			type: String,
 			required: true,
@@ -24,7 +30,13 @@ const NoticeSchema = new Schema(
 			type: String,
 			required: true,
 		},
-		
+
+		/** Highlighted on the public notice list (promotions, events) **/
+		noticeEvent: {
+			type: Boolean,
+			default: false,
+		},
+
 		memberId: {
 			type: Schema.Types.ObjectId,
 			required: true,
@@ -33,5 +45,7 @@ const NoticeSchema = new Schema(
 	},
 	{ timestamps: true, collection: 'notices' },
 );
+
+NoticeSchema.index({ noticeCategory: 1, noticeStatus: 1, noticeTopic: 1, createdAt: -1 });
 
 export default NoticeSchema;

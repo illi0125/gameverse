@@ -329,3 +329,286 @@ All homepage sections now follow the "Boot Sequence" direction. Queries, variabl
 - Created three USER accounts via `signup` — `PixelPilot`, `RetroRiley`, `NightOwlGG` (demo data; password shared with the project owner, not stored in the repo).
 - Posted 8 articles via `imageUploader` (target `article`) + `createBoardArticle`, two per board: NEWS "Ten games are now in the catalog", "How the Top Ranked list works"; FREE "What was your very first console?", "Anyone up for co-op this weekend?"; RECOMMEND "Why The Witcher 3 still holds up", "Cozy games for a rainy evening"; HUMOR "My cat is our new team captain", "\"One more match\" at 2 AM". Images are Unsplash-licensed photos (1600 px) stored in `uploads/article/`.
 - Verified on the homepage Comms section and `/community`.
+
+## Games listing page redesign (gameverse-next, follows docs/GAMEVERSE_DESIGN_SYSTEM.md)
+
+- **New `LayoutCatalog.tsx`:** same Top / Chat / Footer and JWT refresh as `LayoutBasic`, without the legacy banner; shell class `gv-catalog-shell` scopes the homepage header/footer skin to `/game`. `LayoutBasic` is untouched (still used by other pages).
+- **`pages/game/index.tsx`:** render only. Chapter 00 hero (duotone atmosphere + fanned cut plates from the current results, "ALL GAMES." display headline, live readout: total / active filters / sort, search console); chapter 01 results on a paper sheet (sticky filter panel, display count, "Showing x–y of z", sort menu, 3-column grid with a 2-column feature card on page 1, cut-corner pagination, empty state with reset). Mobile UA now renders the page instead of the old placeholder. All query, URL-sync, sort, pagination and like logic unchanged.
+- **`Filter.tsx`:** handlers unchanged; markup → chip toggles over the same MUI checkboxes, fieldsets, squared selects/inputs; new presentation-only `part` prop (`search` | `panel`) so the text search sits in the hero.
+- **New `CatalogCard.tsx`:** cartridge card (paper-label title, price chip, flags, platforms, genres, views, like). `GameCard` untouched (still used by My Favorites / Recently Visited).
+- **New `scss/pc/game/catalog.scss`** (imported in `scss/pc/main.scss`): homepage token values re-declared under `.gv-catalog-shell`; reuses the `gv-cut*` / `gv-sheet-edge` mixins.
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| Interactions (CDP) | Platform chip → URL + chip on; sort → `gameRank`; reset; pagination page 2 (10 of 10); text search "witcher" → 1 result; like (logged out) → existing alert; empty state + reset |
+| Layouts | 1440×900, 820 desktop window, 390 mobile UA (`scrollWidth` 390) |
+| Homepage / GameCard / LayoutBasic | Unchanged (`git diff` empty) |
+
+## Official store links ("Get it") — frontend-only (gameverse-next)
+
+- Chosen over "Download for PC/Mac": most catalog games are not on Mac and many are console/mobile; GameVerse links out to official stores instead of hosting downloads.
+- `libs/gameStores.ts`: title-keyed list (case/punctuation-insensitive) of official links — Steam, GOG, EA app, PlayStation Store, App Store, Google Play, publisher sites — for the 10 catalog games. Every URL checked to return 200; Epic Games Store pages were skipped (bot-protected, could not be verified). New games need a line added here (the backend has no store-link field).
+- `StoreLinksMenu.tsx`: "Get it" button + MUI menu on each Games-page card (`CatalogCard`); `StoreLinks.tsx`: "Where to get it" block at the top of the game detail sidebar. Links open in a new tab with `rel="noopener noreferrer"`; components render nothing for games without links.
+- Styles: `scss/pc/game/storeLinks.scss` (imported in `main.scss`); card genres now truncate to make room.
+- Verified in Chrome: all 9 visible cards show "Get it"; The Witcher 3 menu → Steam / GOG / official site; detail page (Counter-Strike 2) → Steam / official site; opening the menu does not navigate the card. `tsc --noEmit` passed.
+
+## Game detail page redesign (gameverse-next, follows docs/GAMEVERSE_DESIGN_SYSTEM.md)
+
+- **`pages/game/detail.tsx`:** render only. All queries (`GET_GAME`, similar `GET_GAMES`, `GET_COMMENTS`), mutations, handlers, state, defaultProps and the `?id=` router effect are unchanged. Now uses `LayoutCatalog` (same Top/Chat/Footer/JWT refresh; page title set to `<Game> | Gameverse`) with root `.gv-catalog.gv-gd`, so catalog tokens, header/footer skin, chapter labels, `CatalogCard` and pagination styles are reused, not forked. Mobile UA now renders the page instead of the old placeholder.
+- **Chapters:** 00 Title (void, duotone of the game's cover, HUD frame, masked title split into two balanced lines and sized by the longest line, credits, description, discount-aware price, "Where to get it" jump, like chip, live readout, fanned plates of the game's images) → Briefing (paper: "About the game", overview as large editorial text, spec sheet, genre/platform tags linking to filtered `/game`, sticky side column with `StoreLinks` and the owner card) → Gallery (void: full-bleed crossfading active image, giant Unbounded index, cut thumbnails, prev/next; trailers when `gameVideos` exist) → System requirements (ultraviolet, only when present) → Comms (paper: comment log + form, empty state, pagination) → More like this (signal: up to 4 `CatalogCard`s + "See all" for the genres). Chapter numbers follow the chapters actually rendered.
+- **Motion (GSAP):** single load reveal (title lines), hero atmosphere zoom and fan parallax, gallery art settle + numeral drift (`MOTION_QUERY`); similar cards tilt in and level out (`SCENE_QUERY`). Reduced motion: static.
+- **`Review.tsx`:** now a log entry (`<li>`: mono date, greyscale cut avatar, author button keeping the existing `/mypage` / `/member` navigation, text); mobile placeholder removed. Only used by the detail page.
+- **Styles:** new `scss/pc/game/gameDetail.scss` (imported after `catalog.scss`/`storeLinks.scss`); the old `scss/pc/game/detail.scss` (only `#pc-wrap #game-detail-page`) deleted. `GameBigCard` is untouched and still used by agent detail. Homepage, `/game`, `LayoutCatalog`, `CatalogCard`, `StoreLinks` markup unchanged.
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| 1440×900, all chapters (Witcher 3, VALORANT, PUBG, Clash of Clans) | Render as designed; long/short titles fit |
+| 390px mobile UA | Renders full page; `scrollWidth` 390 |
+| 820px desktop window | Page fits; `scrollWidth` 960 comes from the shared header (`Top`), same on the approved `/game` page — pre-existing |
+| Thumbnail click / prev-next | Active image, index and count update (04/04 on Clash of Clans) |
+| "Where to get it" | Jumps to the store block below the fixed header |
+| Like while logged out | Existing "Please login first!" alert |
+| Similar game link | Loads the new game in place (title, chapters, motion re-init) |
+| Unknown id | "Game not available." state with Back to all games |
+| Comment log layout | Verified with DOM-injected sample entries (no game has comments; nothing written to the database) |
+| Not exercised | Logged-in like/comment submit, games with videos or system requirements (none in data) |
+
+## "Agent" shown as "Developer" — frontend only (gameverse-next)
+
+Decision recorded in DECISIONS.md (resolves the NEXT_STEPS item about a Seller-facing alias). Backend contract untouched: `MemberType.AGENT`, `getAgents`, `getAgentGames`, `AgentsInquiry`, JWT, DB and batch ranking are unchanged; signup and admin filters still send `'AGENT'`.
+
+- **Role label:** new `memberTypeLabel()` in `libs/utils.ts` (AGENT → "Developer"), used by the homepage roster, the roster tiles and the game detail owner card ("View Developer").
+- **Routes:** `pages/agent` → `pages/developer` (git mv); links use `?developerId=`, the detail page also accepts the legacy `agentId`. `next.config.js` redirects `/agent` and `/agent/detail` (307, query kept). Updated hrefs in `Top`, `TopAgents`, `TopAgentCard`, `AgentCard` (also fixed its name link, which pointed to the literal `agentId: 'id'`), game detail and `LayoutBasic` banners.
+- **Copy:** nav and banner i18n keys renamed to `Developers` / `Developer Page` / developer descriptions in en/kr/ru; homepage giant word DEVELOPERS (`.gv-roster__word` 18.4vw → 11.2vw so it spans like AGENTS did; design-system doc updated), "See all developers", chapter index; developer list placeholder/empty/total; signup radio; FAQ tab and answers; Notice; About; admin Games column and Users filter; mobile placeholders.
+- **Studio relabel:** the `gameDeveloper` field is labelled "Studio" on game detail and in Add/Edit Game (label, placeholder, validation message). Field name and payload unchanged.
+- Internal identifiers (component names, `agent*` variables, `.agent-*` classes, `GET_AGENTS`, `banner-agents.svg`) intentionally unchanged.
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| Visible-text scan for Agent/agent | Only enum values and identifiers remain |
+| Routes `/`, `/developer`, `/developer/detail`, game detail, join, cs, about | 200 |
+| `/agent`, `/agent/detail?agentId=…` | 307 to `/developer…`, legacy id renders the right member |
+| Homepage roster 1440 / 390 mobile | DEVELOPERS fits, roles read "Developer", no horizontal overflow |
+| Game detail | Owner "Developer", "View Developer", link `/developer/detail?developerId=…`, spec "Studio" |
+| Not exercised (needs logins) | Admin column/filter, Add Game form, signup submit |
+| Pre-existing, not changed | Developer detail logs an Apollo warning from `getCommentsRefetch({ variables: … })` |
+
+## Developers listing redesign (gameverse-next, follows docs/GAMEVERSE_DESIGN_SYSTEM.md)
+
+- **`pages/developer/index.tsx`:** render only. `GET_AGENTS` query, `LIKE_TARGET_MEMBER`, the `?input=` router effect, `sortingHandler` (same 4 sorts: Recent / Oldest / Likes / Views), `paginationChangeHandler`, `likeMemberHandler`, Enter-to-search and defaultProps unchanged. Now uses `LayoutCatalog` (title "Developers | Gameverse") with root `.gv-catalog.gv-dv`, reusing catalog tokens, header/footer skin, hero atmosphere, search console, sort control, empty state and pagination. Mobile UA renders the page instead of the old placeholder. Sort label is now derived from the active sort (it used to say "Recent" after reloading a sorted URL).
+- **Chapters:** 00 Title (void, duotone of the first developer, "THE DEVELOPERS." load reveal, live readout: total / search / sort, lineup of cut portrait slivers with vertical name labels, search console with a submit button that applies the same filter as Enter) → 01 Character select (paper: giant name rows with index, counts, joined date and like; hover/focus selects a developer and a sticky panel crossfades to their colour portrait with stats, View profile and like; unselected names dim while pointing at the list) → 02 Insert coin (signal: logged-out visitors get "Create an account" → `/account/join`; developers get "Add a game" → `/mypage?category=addGame`; hidden for logged-in USERs).
+- **New `libs/components/developer/DeveloperRow.tsx`** (exports `developerHref`, `developerImage`). `AgentCard.tsx` deleted (only this page used it), plus its `.agent-general-card` block in `scss/pc/general.scss` and `scss/pc/agent/agent.scss`. New `scss/pc/developer/developerList.scss`.
+- **Motion:** single load reveal, atmosphere zoom (`MOTION_QUERY`), lineup slivers drift apart on scroll (`SCENE_QUERY`); selection uses CSS transitions; reduced motion static. Below 1100px the panel hides and rows show their own portrait.
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| 1440×900 hero, roster, selection (hover row 3 → panel Miyazaki), join | Renders as designed |
+| Search "miya" | Miyamoto, Miyazaki; readout "2 developers · Matching "miya"" |
+| Sort → Likes | List re-sorted, button and readout "Likes" |
+| Like while logged out | Existing "Please login first!" |
+| Row click / name link | `/developer/detail?developerId=…` |
+| `/agent` legacy link | 307 → `/developer` |
+| 390px mobile UA | Full page, `scrollWidth` 390 |
+| 820px desktop window | Page fits; 960px `scrollWidth` is the shared header (pre-existing, same on `/game`) |
+| Not exercised | Logged-in like, developer "Add a game" CTA, more than one page of developers (only 6 exist) |
+
+## Developer detail redesign (gameverse-next, follows docs/GAMEVERSE_DESIGN_SYSTEM.md)
+
+- **`pages/developer/detail.tsx`:** only imports and the render block changed. `GET_MEMBER`, developer `GET_GAMES`, `GET_COMMENTS`, `CREATE_COMMENT`, `LIKE_TARGET_GAME`, all effects, `redirectToMemberPageHandler`, both pagination handlers, `createCommentHandler` (incl. the self-review guard), `likeGameHandler`, the submit-disabled rule and defaultProps are byte-identical. Uses `LayoutCatalog` (title "<name> | Gameverse") with root `.gv-catalog.gv-gd.gv-dd`, so catalog (atmosphere, grid, `CatalogCard`, pagination, empty state) and game-detail (crumbs, flags, credits, readout, CTAs, comment log/form, loading/not-found state) styles are reused rather than forked. Mobile UA renders the page instead of the old placeholder.
+- **Chapters:** 00 Profile (void, duotone of the portrait, name sized by length with the single load reveal, Developer / Joined flags, address and phone, bio when present, "Full profile" → existing member-page handler, games jump, readout of games/followers/following/likes/views/articles, sharp cut portrait plate) → 01 Library (paper: "Games by <nick>", catalog grid with a feature card on page 1, cards tilt in on scroll, pagination, empty state) → 02 Reviews (ultraviolet: review log, form, pagination). Loading and "Developer not found." states added for missing ids.
+- **`libs/components/agent/ReviewCard.tsx`:** log entry markup (same anatomy as the game comments; `fromMyPage` reply affordance kept). Only used by this page.
+- **Styles:** new `scss/pc/developer/developerDetail.scss`; `scss/pc/agent/detail.scss` (only `.agent-detail-page`) deleted. `GameBigCard` no longer used by any page (file left in place). A `.review-card` block in `scss/pc/main.scss` is now unused (left in place).
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| 1440×900 Profile / Library / Reviews (Leo) | Renders as designed; existing review shown |
+| Games pagination | Page 2 → Clash of Clans, "Showing 10–10 of 10" |
+| Full profile | `/member?memberId=…` (existing handler) |
+| Unknown id | "Developer not found." with All developers link |
+| 390px mobile UA | Full page, `scrollWidth` 390 |
+| Pre-existing, not changed | Apollo warning from `getCommentsRefetch({ variables: … })` (reviews still load via the query's own variables) |
+| Not exercised | Logged-in review submit, logged-in like |
+
+## Community page redesign (gameverse-next, follows docs/GAMEVERSE_DESIGN_SYSTEM.md)
+
+- **`pages/community/index.tsx`:** the original state, `GET_BOARD_ARTICLES` query, `?articleCategory` effect, `tabChangeHandler`, `paginationHandler`, `likeArticleHandler`, the "Write" push to `/mypage?category=writeArticle` and defaultProps (limit 6, `createdAt` ASC) are unchanged. Uses `LayoutCatalog` (title "Community | Gameverse") with root `.gv-catalog.gv-cm`. MUI `TabContext`/`TabList`/`TabPanel` kept (keyboard + ARIA); the four duplicated panels became one panel for the active board. Mobile UA renders the page instead of the placeholder.
+- **Chapters:** 00 Comms (void, duotone of the newest post, "PLAYER COMMS." load reveal, readout of total posts across boards and the current board, newest post across all boards as a cut plate with a paper-label title, title-search console) → 01 Boards (paper: four board tiles with real post counts and latest title, board title and description, sort, "Write a post", feed with a feature plate for the first post on page 1 and log rows after it, pagination, empty states) → 02 Hot on the boards (signal: five most liked posts across every board).
+- **UI-only discovery features, all on existing API fields:** title search (`search.text`), sort control (Oldest first = existing default, Newest first, Most liked, Most read — `availableBoardArticleSorts`), per-board totals and newest post (one `limit: 1` query per board), cross-board most liked (`search` without category). Likes anywhere also refresh the most-liked list. The feature plate's label follows the active sort ("First post", "Latest post", …).
+- **New:** `libs/components/community/PostEntry.tsx` (feature/row; same detail link and author → member page / My Page rule as `CommunityCard`), `libs/components/community/communityMeta.ts` (board labels/descriptions, `articleExcerpt`, `articleHref`, `articleImage`), `scss/pc/community/communityList.scss`. `scss/pc/community/community.scss` (only `#community-list-page`) deleted. `CommunityCard` untouched (still used by My Page and member pages).
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| 1440×900 hero, board tiles, feed, most liked | Real counts (3/2/2/2), newest post, 5 ranked posts |
+| Tab → Recommendations, sort → Newest, search "witcher" | Board, sort and "Showing 1–1 of 1 matching "witcher"" update |
+| Like while logged out | Existing "Please login first!" |
+| Post title click | `/community/detail?articleCategory=FREE&id=…` |
+| 390px mobile UA / 820px window | Full page, 2×2 board tiles (short labels on phones, full name kept as accessible name); 390 `scrollWidth` 390; 820's 960 is the shared header |
+| Board URL bug (found here, fixed below with approval) | `/community?articleCategory=NEWS` opened the Free board; tab changes hid the board from the URL |
+
+### Community board URL fix (approved 2026-10-09)
+
+- **Cause:** the "default to FREE" effect ran on the first render, before the router had parsed the query, so it always pushed FREE; both pushes used `as: router.pathname`, hiding `?articleCategory` from the URL; and `initialInput.search.articleCategory` was mutated during render (shared defaultProps).
+- **Fix (`pages/community/index.tsx`):** the URL is the source of truth for the board. State initialises from the query when the router is ready; one effect waits for `router.isReady`, syncs the board from `?articleCategory` (deep links, refresh, Back/Forward) and replaces a missing or unknown value with FREE; tab changes push a visible `?articleCategory=…`. Removed the defaultProps mutation and the `console.log` in the tab handler. Query, pagination, likes, write link and defaultProps otherwise unchanged; default sort stays `createdAt` ASC.
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| `/community?articleCategory=NEWS` (fresh load) | News board, News tab selected, News posts |
+| `/community` and `?articleCategory=BOGUS` | Replaced with `?articleCategory=FREE`, Free board |
+| News → click Humor → Back | URL `?articleCategory=HUMOR` + Humor board, then back to News |
+| Homepage "News board" link (client navigation) | Lands on News |
+
+## Community detail: "No data found" fix (backend, approved 2026-10-09)
+
+- **Cause:** the three demo USER accounts (PixelPilot, RetroRiley, NightOwlGG) were set to `DELETE` on 2026-10-09 02:10–02:11. The listing aggregation still joins their profiles, but `BoardArticleService.getBoardArticle` loaded the author with `memberService.getMember()`, which throws `NO_DATA_FOUND` for non-active members, so every post errored and the global Apollo error link showed "No data found!".
+- **Fix (`apps/gameverse-api/.../board-article.service.ts`):** the author is loaded with `getMemberOrNull()` (same rule as Game owners); `BoardArticle.memberData` was already nullable. New `board-article.read.spec.ts`: deleted author → `memberData: null`; missing/deleted article still not found. 2/2 tests pass, API `tsc --noEmit` passes, the running API reloaded and returns the post.
+- **Frontend:** posts and comments by deleted accounts show "Deleted account" without a profile link (new `activeAuthor()` in `communityMeta.ts`, used on the listing feed, hero and most-liked list, and in detail comments).
+
+## Community detail redesign (gameverse-next, follows docs/GAMEVERSE_DESIGN_SYSTEM.md)
+
+- **`pages/community/detail.tsx`:** state, `GET_BOARD_ARTICLE`, `GET_COMMENTS`, like (with `likeLoading`), create / update / delete comment (confirm), `goMemberPage`, pagination and defaultProps unchanged. Board navigation (`tabChangeHandler`) now keeps `?articleCategory` in the URL (was `as: '/community'`, which sent every board link to Free after the listing fix). Uses `LayoutCatalog`, root `.gv-catalog.gv-gd.gv-cd`; mobile UA renders the page.
+- **Chapters:** 00 Post (void, duotone of the post image, crumbs, board + reading-time flags, title sized by length with the load reveal, byline, like / comments jump / copy link, readout, sharp image plate) → 01 Read (paper: sticky action rail, long-form column with the Toast UI viewer restyled for reading — Archivo 18px / 1.75, lead paragraph, headings, cut images, quotes, code — end-of-post like, board switcher and Write) → 02 Thread (ultraviolet: comment log with Author tag, own-comment Edit/Delete, inline 0/100 counter, Enter submits) → 03 Keep reading (signal: up to 3 newer posts on the same board).
+- **UI-only extras:** reading progress bar (share of the article in view), copy link (Clipboard API with a fallback), reading time, related posts via `GET_BOARD_ARTICLES`, comments jump, accessible edit dialog (MUI `Dialog` replaces the per-comment `Backdrop`; same state and handlers), "Post not available" state.
+- **Files:** new `scss/pc/community/communityDetail.scss`; `scss/pc/community/detail.scss` (only `#community-detail-page`) deleted; `TViewer.tsx` wrapper restyled (Viewer and renderers unchanged; only used here); `communityMeta.ts` gained `articlePlainText`, `readingMinutes`, `activeAuthor`.
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| Open a post from the listing | Renders; no "No data found!" alert |
+| Like / comment while logged out | Existing "Please login first!"; counter 12/100 |
+| Copy link (real user gesture) | Copies, no error |
+| Board switcher → News | `/community?articleCategory=NEWS`, News board |
+| Unknown id | "Post not available." |
+| Reading progress | 0 at top, 1 once the article end is visible |
+| 390px mobile UA / 820px | Full page; 390 `scrollWidth` 390; 820's 960 is the shared header |
+| Not exercised (needs login) | Comment create, edit, delete; logged-in like |
+
+## My Page redesign (gameverse-next, follows docs/GAMEVERSE_DESIGN_SYSTEM.md)
+
+- **`pages/mypage/index.tsx`:** follow / unfollow / like-member / member-redirect handlers, the logged-out redirect and the legacy tab-name redirect are unchanged; only the render changed. Uses `LayoutCatalog` (title "<section> | Gameverse") with root `.gv-catalog.gv-gd.gv-mp`; mobile UA renders the page. Chapters: 00 Player one (void, duotone of the avatar, cut avatar, nick sized by length, role / address / current section, Edit profile + Add a game or Write a post) → 01 Console (paper: section navigation + active panel).
+- **`MyMenu.tsx`** (My Page only): grouped console — Studio (Developers only: Add game, My games), Library, Social, Community, Account (profile, admin link for ADMIN, logout confirm). Each item shows a live total from its own read-only `limit: 1` query (favorites, visited, followers, following, articles, active + upcoming games), refreshed when the section changes. JWT snapshot counts are not shown (they go stale; `getMember` on yourself would record a view).
+- **Sections:** new `MyPageHead`. `MyProfile` (labelled fields, photo preview, Enter submits, same disabled rule), `MyGames` (status tabs with count, table header, empty state; rows still `MyGameCard`), `MyFavorites` / `RecentlyVisited` (catalog grid), `MyArticles` (community `PostEntry` rows instead of the shared `CommunityCard`), `WriteArticle` + `Teditor` (board radio chips, display title input, restyled editor, Publish — same handlers), `AddNewGame` (same form and logic; header, no image-based select arrows, renders on mobile).
+- **Shared components:** `GameCard` (only used by My Page) now uses the catalog card anatomy — favorites keep a filled heart that removes the favorite, visited has no like button. `MyGameCard` (also used by the member page) only gained `data-status` and renders on mobile; `MemberFollowers/Followings` (also used by the member page) only lost the component-level mobile placeholder. Their My Page look is CSS scoped under `.gv-mp`; the member page is unchanged.
+- **Styles:** new `scss/pc/mypage/gvMyPage.scss`; the 8 old `scss/pc/mypage/*.scss` files (all scoped to `#my-page` / removed ids) deleted.
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| Logged out → `/mypage` | Redirects to `/` (unchanged) |
+| Signed in as Leo (Developer), 1440 | Hero, console totals (My games 10, Favorites 10, Visited 3, Followers 1, Following 0, Articles 0) and every section render; no alerts, no overflow |
+| My games | Active/Upcoming tabs (10 / 0), status menu "Mark as Upcoming", Edit opens Genshin Impact with 3 images (nothing saved) |
+| Write article | Toast UI editor loads with board chips and title |
+| 390px mobile (signed in) | All sections fit (`scrollWidth` 390); console becomes a swipeable strip; game rows keep status + actions |
+| Not exercised (would change real data) | Saving profile/game, upload, delete, status change, unfavorite, follow/unfollow, publishing |
+| Reload redirect bug | Found here; fixed below with approval |
+
+### My Page reload redirect fix (approved 2026-10-09)
+
+- **Cause:** `pages/mypage/index.tsx` redirected home when `userVar` had no `_id`. On a full load the page's effect runs before the layout's effect restores the user from the stored token, so every reload or direct visit while signed in bounced to `/` (also true before the redesign with `LayoutBasic`).
+- **Fix:** redirect only when there is no user **and** no saved token (`getJwtToken()`). Logout still redirects because `logOut()` removes the token.
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| Signed in: open `/mypage?category=myGames` directly, then reload | Stays on My games (Leo, 5 rows) |
+| Token removed, open `/mypage` | Redirects to `/` |
+| Logout from the console (confirm) | Token cleared, lands on `/` |
+
+## Admin redesign — Stage 0: Support backend (gameverse, approved 2026-10-09)
+
+- New `components/notice` (module, resolver, service) on the existing `Notice` schema (+ `noticeTopic`, `NOTICE` category, compound index) and new `components/inquiry` with `schemas/Inquiry.model.ts`; DTOs in `libs/dto/notice` and `libs/dto/inquiry`; `SupportTopic` and `InquiryStatus` enums; `availableNoticeSorts`, `availableInquirySorts` and `escapeRegex` in `libs/config.ts`. Contract in BACKEND_MIGRATION.md.
+- `scripts/seed-cs-content.ts` + `scripts/data/cs-content.ts`, `npm run seed:cs`.
+
+| Check | Result |
+| --- | --- |
+| Jest (all) | 12 suites / 43 tests passed (new: notice service 6, inquiry service 6, seed 2) |
+| API + batch `tsc --noEmit`, `build:api`, `build:batch` | Passed |
+| Live schema | 11 new operations exposed |
+| Seed dry-run / apply / re-apply / verify | 31 to insert → 31 inserted → 0 → verified |
+| Live end-to-end (Admin + a developer account, throwaway records removed afterwards) | 14/14: draft hidden from public, non-admin and anonymous blocked, remove rules, answer visible to the asker |
+
+### Stage 0 follow-ups (2026-10-09)
+
+- **Event flag:** `Notice.noticeEvent` (schema, DTOs, input/update) restores the former "event" highlight; the seed sets it and back-fills it once on already-seeded notices that have no value (re-run flags 0). Applied: 1 notice flagged.
+- **Public `/cs` reads the API:** `libs/components/cs/Notice.tsx` (`getNotices` NOTICE, newest first, numbered, event highlight, original dates) and `Faq.tsx` (`getNotices` FAQ by topic, original order) — hardcoded data removed; same layout (the CS page redesign is separate). New frontend `libs/enums/notice.enum.ts`, `libs/types/notice`, `libs/types/inquiry`, and Support documents in `apollo/{user,admin}/{query,mutation}.ts`. All 47 Apollo documents validate against the live schema.
+
+## Admin redesign — Stage 1: shell, shared components, Users (gameverse-next)
+
+- **Shell (`LayoutAdmin.tsx`):** admin check, token restore, redirect and logout logic unchanged. New "Control Room" markup: black sidebar (logo, Control room tag, admin identity, grouped navigation, View site, Logout), sticky top bar (breadcrumb from the route, account menu), skip link, page titles `<Page> · Admin | Gameverse`; below 1100px the sidebar is a drawer with a scrim. Keeps `id="pc-wrap"` + `#bunker` so not-yet-migrated pages keep their legacy styles.
+- **`AdminMenuList.tsx`:** same routes, grouped Manage (Users, Games, Community) / Support (FAQ, Notices); active item from the URL; exports `adminNavGroups` and `adminPageTitle`.
+- **Shared kit `libs/components/admin/ui/AdminUi.tsx`:** `AdminPageHeader`, `AdminTabs` (with counts), `AdminSearch` (Enter/submit/clear), `StatusChip` (tones live/hold/alert/off/neutral; opens menus), `AdminEmpty`, `useAdminDensity` + `DensityToggle` (saved per browser).
+- **Users (`pages/_admin/users/index.tsx`, `MemberList.tsx`):** all handlers unchanged (tabs, search, type filter, paging, rows per page, role/status update via the same menus). Status tabs show real totals (`getAllMembersByAdmin` `limit: 1` per status, refreshed after changes); table with avatar + nick + id, role and status chips, empty/loading/error states, density toggle.
+- **Styles:** new `scss/pc/admin/gvAdmin.scss` (loaded after `admin.scss`); `admin.scss` stays until Games, Community and Support are migrated.
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| Signed in as Admin, 1440 | Tabs All 14 / Active 13 / Blocked 0 / Deleted 1; tab switch; search "leo" → Leo; clear; compact density; status menu lists the other statuses (closed without changing anything) |
+| Legacy Games / FAQ pages inside the new shell | Render with their previous styles |
+| 820px | Sidebar opens as a drawer over a scrim |
+| Not exercised (would change real accounts) | Applying a role or status change |
+
+## Admin redesign — Stage 2: Games (gameverse-next)
+
+- **Page (`pages/_admin/games/index.tsx`):** inquiry state and every handler unchanged (status tabs, text search, platform/genre/type/featured filters, paging, rows per page, status menu, featured switch, delete confirm, permanent remove). Now uses the shared kit: `AdminPageHeader`, `AdminTabs` with real totals (`getAllGamesByAdmin` `limit: 1` per status, refreshed after changes), `AdminSearch` (Enter / Search / clear — the old submit-on-blur is gone, matching Users), labelled `gv-admin-select` filters, `DensityToggle`.
+- **Table (`GameList.tsx`):** cover thumbnail + title + id (links to the game unless deleted), developer links to the member page, price with struck-through original when discounted, platforms, type, views, square featured switch (disabled while deleted), status chip (Active / Upcoming / Deleted) opening the same menu ("Restore as …" for deleted), icon button for permanent remove; loading / error / empty states.
+- **Styles:** additions in `scss/pc/admin/gvAdmin.scss` (`gv-admin-link`, `gv-admin-game__*`, `gv-admin-switch`, `gv-admin-row-actions`, `gv-admin-iconbtn`, dimmed deleted rows).
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| `next dev` → `/_admin/games` | Compiles (page + SCSS), 200 |
+| Count query input vs live `AllGamesInquiry` schema | Valid (`page`, `limit`, `search` required) |
+| Signed-in visual check (1440 / 820 / 390) | **Not done** — no browser available in this session |
+| Not exercised (would change real data) | Status change, featuring, delete, permanent remove |
+
+## Admin redesign — Stage 3: Community (gameverse-next)
+
+- **Page (`pages/_admin/community/index.tsx`):** inquiry state and handlers unchanged (status tabs, board filter, paging, rows per page, status menu, permanent remove). Shared kit: `AdminPageHeader`, `AdminTabs` with real totals (`getAllBoardArticlesByAdmin` `limit: 1` per status, refreshed after changes), labelled board filter using the public board names (`communityBoards`), `DensityToggle`. No search box: `ABAISearch` has no text field. Title typo "Arricle List" gone.
+- **Fixes:** debug `console.log`s removed; after a permanent remove the list refetch now passes `{ input }` (it passed `{ variables: { input } }`, which only worked because Apollo merged the old variables).
+- **Table (`CommunityArticleList.tsx`):** cover + title + id (links to the article unless deleted), board name, writer avatar + nick (links to the member page), views, likes, posted date, status chip. Deleted articles show a plain "Deleted" chip and the remove button — no restore, because `updateBoardArticleByAdmin` only matches active articles. Loading / error / empty states.
+- **Styles:** `gv-admin-article__title`, `gv-admin-writer` in `gvAdmin.scss`.
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| `next dev -p 3100` → `/_admin/community`, `/_admin/games` | Both compile, 200 (server stopped afterwards; port 3000 left free) |
+| Signed-in visual check | **Not done** — no browser available in this session |
+| Not exercised (would change real data) | Deleting an article, permanent remove |
+
+### Stage 3 follow-up: restore deleted articles (approved 2026-10-09)
+
+- **Backend (gameverse):** `updateBoardArticleByAdmin` matches any status, so `DELETE → ACTIVE` restores; the author's `memberArticles` counter follows real status changes only (−1 delete, +1 restore, 0 otherwise). New `board-article.admin.spec.ts` (4 tests).
+- **Frontend:** the Community status chip on deleted rows opens "Restore as Active" again, next to the remove button.
+
+| Check | Result |
+| --- | --- |
+| Jest (all) | 13 suites / 47 tests passed |
+| API `tsc --noEmit` | Passed |
+| Running API (watch) | Restarted with the change |
+| Not exercised (would change real data) | Restoring a real article |
+
+## Admin redesign — Stage 4: Support (gameverse-next)
+
+All three Support pages were static placeholders (no queries, no handlers). They now use the Stage 0 API.
+
+- **FAQ + Notices (`pages/_admin/cs/faq.tsx`, `notice.tsx`):** both render `NoticeManager` with a kind from `supportMeta.ts` (FAQ: topic column and filter, oldest first like the public page; Notices: event switch, newest first). Status tabs All / Published / Drafts / Deleted with real counts, title search, density toggle, paging. Status chip menu: Publish / Move to drafts / Delete (confirm) / Restore as draft or published; permanent remove only for deleted rows (confirm); edit button on the others.
+- **`NoticeEditor` dialog:** create / edit with topic (FAQ), title and content (counters, API limits 3–150 / 3–5000, inline errors), event checkbox (Notices), Draft / Published choice. Toast on save.
+- **Inquiries (`pages/_admin/cs/inquiry.tsx`):** opens on the Pending queue (oldest first; other tabs newest first), tabs Pending / Answered / Closed / All with counts, title search, topic filter. Rows show title + preview, asker, topic, asked / answered dates, status. **`InquiryAnswerDialog`:** the question, reply box (2–2000; "Update reply" once answered), Close inquiry, Reopen (back to Answered if a reply exists, else Pending; dialog stays open). Remove only for closed inquiries.
+- **Sidebar:** "Inquiries" added under Support (it was reachable only by URL).
+- **Removed:** `libs/components/admin/cs/FaqList.tsx` (placeholder rows, now unused). `NoticeList.tsx` and `InquiryList.tsx` rewritten.
+- **Styles (`gvAdmin.scss`):** tokens also declared on `.gv-admin-dialog` (dialogs render in a portal); `gv-admin-btn` (cut-corner primary, ghost, small), dialog, fields, segment, checkbox, inquiry thread, support cells.
+- **`admin.scss` kept on purpose:** every admin page is migrated, but its rules are scoped to `#pc-wrap`, which the public layouts also use (e.g. it fixes `.MuiAppBar-root`). Remove it only with a visual pass over public pages.
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` | Passed |
+| `next dev -p 3100` → all six admin routes | Compile, 200 (server stopped afterwards) |
+| Notice / inquiry list, count and create inputs vs live API | Accepted by schema validation (anonymous calls stop at the auth guard) |
+| Signed-in visual check, creating / answering / status changes | **Not done** — no browser in this session; would also change real data |
