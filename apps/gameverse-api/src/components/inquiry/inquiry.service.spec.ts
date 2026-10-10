@@ -2,6 +2,7 @@
 import { InternalServerErrorException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { InquiryService } from './inquiry.service';
+import { notificationStub } from '../notification/notification.testing';
 import { InquiryResolver } from './inquiry.resolver';
 import { InquiryStatus } from '../../libs/enums/inquiry.enum';
 import { SupportTopic } from '../../libs/enums/notice.enum';
@@ -12,15 +13,18 @@ const execOf = (value: unknown) => jest.fn().mockReturnValue({ exec: jest.fn().m
 describe('InquiryService', () => {
 	it('creates inquiries as PENDING for the signed-in member, whatever the client sends', async () => {
 		const create = jest.fn().mockImplementation(async (doc) => doc);
-		const service = new InquiryService({ create } as any);
+		const service = new InquiryService({ create } as any, notificationStub() as any);
 		const memberId = new Types.ObjectId();
 
-		const created = await service.createInquiry(memberId as any, {
-			inquiryTopic: SupportTopic.OTHER,
-			inquiryTitle: 'Help',
-			inquiryContent: 'Please help me',
-			inquiryStatus: InquiryStatus.ANSWERED,
-		} as any);
+		const created = await service.createInquiry(
+			memberId as any,
+			{
+				inquiryTopic: SupportTopic.OTHER,
+				inquiryTitle: 'Help',
+				inquiryContent: 'Please help me',
+				inquiryStatus: InquiryStatus.ANSWERED,
+			} as any,
+		);
 
 		expect(created.memberId).toBe(memberId);
 		expect(created.inquiryStatus).toBe(InquiryStatus.PENDING);
@@ -28,7 +32,7 @@ describe('InquiryService', () => {
 
 	it('lists only the caller’s own inquiries', async () => {
 		const aggregate = execOf([{ list: [], metaCounter: [] }]);
-		const service = new InquiryService({ aggregate } as any);
+		const service = new InquiryService({ aggregate } as any, notificationStub() as any);
 		const memberId = new Types.ObjectId();
 
 		await service.getMyInquiries(memberId as any, { page: 1, limit: 5 });
@@ -38,7 +42,7 @@ describe('InquiryService', () => {
 
 	it('answers open inquiries, records who answered, and never answers a closed one', async () => {
 		const findOneAndUpdate = execOf({ _id: 'x' });
-		const service = new InquiryService({ findOneAndUpdate } as any);
+		const service = new InquiryService({ findOneAndUpdate } as any, notificationStub() as any);
 		const adminId = new Types.ObjectId();
 		const id = new Types.ObjectId();
 
@@ -53,7 +57,7 @@ describe('InquiryService', () => {
 
 	it('only marks an inquiry ANSWERED again when it has a reply', async () => {
 		const findOneAndUpdate = execOf(null);
-		const service = new InquiryService({ findOneAndUpdate } as any);
+		const service = new InquiryService({ findOneAndUpdate } as any, notificationStub() as any);
 		const id = new Types.ObjectId();
 
 		await expect(
@@ -64,7 +68,7 @@ describe('InquiryService', () => {
 
 	it('only permanently removes CLOSED inquiries', async () => {
 		const findOneAndDelete = execOf(null);
-		const service = new InquiryService({ findOneAndDelete } as any);
+		const service = new InquiryService({ findOneAndDelete } as any, notificationStub() as any);
 		const id = new Types.ObjectId();
 
 		await expect(service.removeInquiry(id as any)).rejects.toBeInstanceOf(InternalServerErrorException);

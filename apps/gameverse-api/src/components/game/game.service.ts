@@ -21,6 +21,8 @@ import { LikeService } from '../like/like.service';
 import { ViewGroup } from '../../libs/enums/view.enum';
 import { LikeGroup } from '../../libs/enums/like.enum';
 import { LikeInput } from '../../libs/dto/like/like.input';
+import { NotificationService } from '../notification/notification.service';
+import { NotificationGroup, NotificationType } from '../../libs/enums/notification.enum';
 
 export function normalizeGameSlug(title: string): string {
 	const slug = title
@@ -49,6 +51,7 @@ export class GameService {
 		private readonly memberService: MemberService,
 		private readonly viewService: ViewService,
 		private readonly likeService: LikeService,
+		private readonly notificationService: NotificationService,
 	) {}
 
 	public async createGame(input: GameInput): Promise<Game> {
@@ -67,6 +70,14 @@ export class GameService {
 					gameSlug,
 				});
 				await this.memberService.memberStatsEditor({ _id: result.memberId, targetKey: 'memberGames', modifier: 1 });
+				// Followers of the developer hear about it; runs in the background (never blocks or fails the create)
+				void this.notificationService.notifyFollowers({
+					notificationType: NotificationType.NEW_GAME,
+					notificationGroup: NotificationGroup.GAME,
+					notificationTitle: result.gameTitle,
+					authorId: result.memberId,
+					gameId: result._id,
+				});
 				return result;
 			} catch (err) {
 				if ((err as { code?: number }).code === 11000) continue;
@@ -112,6 +123,7 @@ export class GameService {
 		if (input.gameStatus === GameStatus.DELETE) {
 			await this.memberService.memberStatsEditor({ _id: memberId, targetKey: 'memberGames', modifier: -1 });
 		}
+		this.announceRelease(current.gameStatus, result);
 		return result;
 	}
 
@@ -167,6 +179,18 @@ export class GameService {
 		const modifier = await this.likeService.toggleLike(input);
 		const result = await this.gameStatsEditor({ _id: likeRefId, targetKey: 'gameLikes', modifier });
 		if (!result) throw new InternalServerErrorException(Message.SOMETHING_WENT_WRONG);
+		if (modifier > 0) {
+			await this.notificationService.notify(
+				{
+					notificationType: NotificationType.LIKE,
+					notificationGroup: NotificationGroup.GAME,
+					notificationTitle: target.gameTitle,
+					authorId: memberId,
+					gameId: likeRefId,
+				},
+				target.memberId,
+			);
+		}
 		return result;
 	}
 
@@ -178,7 +202,8 @@ export class GameService {
 		return this.aggregateGames(match, input);
 	}
 
-	public async updateGameByAdmin(input: AdminGameUpdate): Promise<Game> {
+	/** `adminId` (from the resolver) signs the moderation notification when a game is removed **/
+	public async updateGameByAdmin(input: AdminGameUpdate, adminId?: ObjectId): Promise<Game> {
 		const current = await this.gameModel.findById(input._id).lean();
 		if (!current) throw new InternalServerErrorException(Message.UPDATE_FAILED);
 		this.validateCatalog({ ...current, ...input });
@@ -198,6 +223,21 @@ export class GameService {
 		} else if (willBeRestored) {
 			await this.memberService.memberStatsEditor({ _id: result.memberId, targetKey: 'memberGames', modifier: 1 });
 		}
+		if (!wasDeleted && willBeDeleted && adminId) {
+			await this.notificationService.notify(
+				{
+					notificationType: NotificationType.MODERATION,
+					notificationGroup: NotificationGroup.GAME,
+					notificationTitle: result.gameTitle,
+					authorId: adminId,
+					gameId: result._id,
+					// A game can be removed again after a restore; each removal is its own notice
+					dedupeExtra: String(update.deletedAt?.getTime() ?? Date.now()),
+				},
+				result.memberId,
+			);
+		}
+		this.announceRelease(current.gameStatus, result);
 		return result;
 	}
 
@@ -205,6 +245,21 @@ export class GameService {
 		const result = await this.gameModel.findOneAndDelete({ _id: gameId, gameStatus: GameStatus.DELETE }).exec();
 		if (!result) throw new InternalServerErrorException(Message.REMOVE_FAILED);
 		return result;
+	}
+
+	/** UPCOMING → ACTIVE: members who liked the game hear it is out; background, never blocks the update **/
+	private announceRelease(previousStatus: GameStatus, game: Game): void {
+		if (previousStatus !== GameStatus.UPCOMING || game.gameStatus !== GameStatus.ACTIVE) return;
+		void this.notificationService.notifyGameLikers(
+			{
+				notificationType: NotificationType.GAME_RELEASE,
+				notificationGroup: NotificationGroup.GAME,
+				notificationTitle: game.gameTitle,
+				authorId: game.memberId,
+				gameId: game._id,
+			},
+			game._id,
+		);
 	}
 
 	public async gameStatsEditor(input: StatisticModifier): Promise<Game | null> {

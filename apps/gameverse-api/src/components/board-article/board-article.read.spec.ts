@@ -3,6 +3,7 @@ import { InternalServerErrorException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { BoardArticleStatus } from '../../libs/enums/board-article.enum';
 import { BoardArticleService } from './board-article.service';
+import { notificationStub } from '../notification/notification.testing';
 
 function articleQuery(result: unknown) {
 	return {
@@ -17,7 +18,13 @@ describe('Board article reads', () => {
 		const article = { _id: articleId, memberId: authorId, articleStatus: BoardArticleStatus.ACTIVE, articleViews: 0 };
 		const boardArticleModel = { findOne: jest.fn().mockReturnValue(articleQuery(article)) };
 		const memberService = { getMemberOrNull: jest.fn().mockResolvedValue(null) };
-		const service = new BoardArticleService(boardArticleModel as any, memberService as any, {} as any, {} as any);
+		const service = new BoardArticleService(
+			boardArticleModel as any,
+			memberService as any,
+			{} as any,
+			{} as any,
+			notificationStub() as any,
+		);
 
 		const result = await service.getBoardArticle(null as any, articleId as any);
 
@@ -27,7 +34,13 @@ describe('Board article reads', () => {
 
 	it('still reports a missing or deleted article as not found', async () => {
 		const boardArticleModel = { findOne: jest.fn().mockReturnValue(articleQuery(null)) };
-		const service = new BoardArticleService(boardArticleModel as any, {} as any, {} as any, {} as any);
+		const service = new BoardArticleService(
+			boardArticleModel as any,
+			{} as any,
+			{} as any,
+			{} as any,
+			notificationStub() as any,
+		);
 
 		await expect(service.getBoardArticle(null as any, new Types.ObjectId() as any)).rejects.toBeInstanceOf(
 			InternalServerErrorException,

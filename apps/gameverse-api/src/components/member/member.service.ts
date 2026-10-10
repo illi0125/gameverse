@@ -13,6 +13,8 @@ import { ViewService } from '../view/view.service';
 import { LikeService } from '../like/like.service';
 import { LikeInput } from '../../libs/dto/like/like.input';
 import { LikeGroup } from '../../libs/enums/like.enum';
+import { NotificationService, idText } from '../notification/notification.service';
+import { NotificationGroup, NotificationType } from '../../libs/enums/notification.enum';
 import { Follower, Following, MeFollowed } from '../../libs/dto/follow/follow';
 import { lookupAuthMemberLiked } from '../../libs/config';
 
@@ -36,6 +38,7 @@ export class MemberService {
 		private authService: AuthService,
 		private viewService: ViewService,
 		private likeService: LikeService,
+		private readonly notificationService: NotificationService,
 	) {}
 
 	public async signup(input: MemberInput): Promise<Member> {
@@ -170,6 +173,17 @@ export class MemberService {
 		const result = await this.memberStatsEditor({ _id: likeRefId, targetKey: 'memberLikes', modifier });
 
 		if (!result) throw new InternalServerErrorException(Message.SOMETHING_WENT_WRONG);
+		if (modifier > 0 && idText(memberId) !== idText(likeRefId)) {
+			await this.notificationService.notify(
+				{
+					notificationType: NotificationType.LIKE,
+					notificationGroup: NotificationGroup.MEMBER,
+					notificationTitle: await this.notificationService.memberNick(memberId),
+					authorId: memberId,
+				},
+				likeRefId,
+			);
+		}
 		return result;
 	}
 

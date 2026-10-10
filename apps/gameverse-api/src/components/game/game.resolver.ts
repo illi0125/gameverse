@@ -101,9 +101,12 @@ export class GameResolver {
 	@Roles(MemberType.ADMIN)
 	@UseGuards(RolesGuard)
 	@Mutation(() => Game)
-	public async updateGameByAdmin(@Args('input') input: AdminGameUpdate): Promise<Game> {
+	public async updateGameByAdmin(
+		@Args('input') input: AdminGameUpdate,
+		@AuthMember('_id') adminId: ObjectId,
+	): Promise<Game> {
 		input._id = shapeIntoMongoObjectId(input._id);
-		return this.gameService.updateGameByAdmin(input);
+		return this.gameService.updateGameByAdmin(input, adminId);
 	}
 
 	@Roles(MemberType.ADMIN)

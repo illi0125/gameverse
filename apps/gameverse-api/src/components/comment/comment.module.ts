@@ -7,6 +7,7 @@ import { AuthModule } from '../auth/auth.module';
 import { MemberModule } from '../member/member.module';
 import { GameModule } from '../game/game.module';
 import { BoardArticleModule } from '../board-article/board-article.module';
+import { NotificationModule } from '../notification/notification.module';
 
 @Module({
 	imports: [
@@ -15,6 +16,7 @@ import { BoardArticleModule } from '../board-article/board-article.module';
 		MemberModule,
 		GameModule,
 		BoardArticleModule,
+		NotificationModule,
 	],
 	providers: [CommentResolver, CommentService],
 })

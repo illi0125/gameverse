@@ -7,6 +7,7 @@ import { MemberModule } from '../member/member.module';
 import { ViewModule } from '../view/view.module';
 import { GameResolver } from './game.resolver';
 import { GameService } from './game.service';
+import { NotificationModule } from '../notification/notification.module';
 
 @Module({
 	imports: [
@@ -15,6 +16,7 @@ import { GameService } from './game.service';
 		ViewModule,
 		MemberModule,
 		LikeModule,
+		NotificationModule,
 	],
 	providers: [GameResolver, GameService],
 	exports: [GameService],

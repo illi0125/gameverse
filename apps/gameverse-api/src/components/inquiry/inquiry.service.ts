@@ -8,10 +8,15 @@ import { InquiryStatus } from '../../libs/enums/inquiry.enum';
 import { Direction, Message } from '../../libs/enums/common.enum';
 import { T } from '../../libs/types/common';
 import { escapeRegex, lookupMember } from '../../libs/config';
+import { NotificationService } from '../notification/notification.service';
+import { NotificationGroup, NotificationType } from '../../libs/enums/notification.enum';
 
 @Injectable()
 export class InquiryService {
-	constructor(@InjectModel('Inquiry') private readonly inquiryModel: Model<Inquiry>) {}
+	constructor(
+		@InjectModel('Inquiry') private readonly inquiryModel: Model<Inquiry>,
+		private readonly notificationService: NotificationService,
+	) {}
 
 	/** MEMBER **/
 
@@ -57,6 +62,19 @@ export class InquiryService {
 			)
 			.exec();
 		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
+		await this.notificationService.notify(
+			{
+				notificationType: NotificationType.INQUIRY_ANSWER,
+				notificationGroup: NotificationGroup.INQUIRY,
+				notificationTitle: result.inquiryTitle,
+				notificationDesc: result.answerContent,
+				authorId: adminId,
+				inquiryId: result._id,
+				// Each (re)answer is its own notice
+				dedupeExtra: String(result.answeredAt?.getTime?.() ?? Date.now()),
+			},
+			result.memberId,
+		);
 		return result;
 	}
 
@@ -80,10 +98,18 @@ export class InquiryService {
 		return result;
 	}
 
-	private async aggregateInquiries(match: T, sort: T, page: number, limit: number, withAuthor: boolean): Promise<Inquiries> {
+	private async aggregateInquiries(
+		match: T,
+		sort: T,
+		page: number,
+		limit: number,
+		withAuthor: boolean,
+	): Promise<Inquiries> {
 		const list: PipelineStage.FacetPipelineStage[] = [{ $skip: (page - 1) * limit }, { $limit: limit }];
 		if (withAuthor) {
-			list.push(lookupMember as PipelineStage.Lookup, { $unwind: { path: '$memberData', preserveNullAndEmptyArrays: true } });
+			list.push(lookupMember, {
+				$unwind: { path: '$memberData', preserveNullAndEmptyArrays: true },
+			});
 		}
 
 		const result = await this.inquiryModel

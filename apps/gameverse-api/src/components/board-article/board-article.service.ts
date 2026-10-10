@@ -18,6 +18,8 @@ import { lookupAuthMemberLiked, lookupMember, shapeIntoMongoObjectId } from '../
 import { LikeService } from '../like/like.service';
 import { LikeInput } from '../../libs/dto/like/like.input';
 import { LikeGroup } from '../../libs/enums/like.enum';
+import { NotificationService } from '../notification/notification.service';
+import { NotificationGroup, NotificationType } from '../../libs/enums/notification.enum';
 
 @Injectable()
 export class BoardArticleService {
@@ -26,6 +28,7 @@ export class BoardArticleService {
 		private readonly memberService: MemberService,
 		private readonly viewService: ViewService,
 		private readonly likeService: LikeService,
+		private readonly notificationService: NotificationService,
 	) {}
 
 	public async createBoardArticle(memberId: ObjectId, input: BoardArticleInput): Promise<BoardArticle> {
@@ -142,6 +145,18 @@ export class BoardArticleService {
 		});
 
 		if (!result) throw new InternalServerErrorException(Message.SOMETHING_WENT_WRONG);
+		if (modifier > 0) {
+			await this.notificationService.notify(
+				{
+					notificationType: NotificationType.LIKE,
+					notificationGroup: NotificationGroup.ARTICLE,
+					notificationTitle: target.articleTitle,
+					authorId: memberId,
+					articleId: likeRefId,
+				},
+				target.memberId,
+			);
+		}
 		return result;
 	}
 
@@ -181,7 +196,8 @@ export class BoardArticleService {
 	}
 
 	/** Admin edit of any article; DELETE → ACTIVE restores it. The author's article counter follows status changes only. **/
-	public async updateBoardArticleByAdmin(input: BoardArticleUpdate): Promise<BoardArticle> {
+	/** `adminId` (from the resolver) signs the moderation notification when an article is removed **/
+	public async updateBoardArticleByAdmin(input: BoardArticleUpdate, adminId?: ObjectId): Promise<BoardArticle> {
 		const { _id, articleStatus } = input;
 
 		const previous = await this.boardArticleModel.findOneAndUpdate({ _id: _id }, input, { new: false }).lean().exec();
@@ -195,7 +211,26 @@ export class BoardArticleService {
 			});
 		}
 
-		return { ...previous, ...input } as BoardArticle;
+		if (
+			adminId &&
+			articleStatus === BoardArticleStatus.DELETE &&
+			previous.articleStatus !== BoardArticleStatus.DELETE
+		) {
+			await this.notificationService.notify(
+				{
+					notificationType: NotificationType.MODERATION,
+					notificationGroup: NotificationGroup.ARTICLE,
+					notificationTitle: previous.articleTitle,
+					authorId: adminId,
+					articleId: previous._id,
+					// An article can be removed again after a restore; each removal is its own notice
+					dedupeExtra: String(Date.now()),
+				},
+				previous.memberId,
+			);
+		}
+
+		return { ...previous, ...input };
 	}
 
 	public async removeBoardArticleByAdmin(articleId: ObjectId): Promise<BoardArticle> {

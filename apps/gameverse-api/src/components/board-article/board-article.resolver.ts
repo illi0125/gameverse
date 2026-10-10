@@ -97,7 +97,7 @@ export class BoardArticleResolver {
 	): Promise<BoardArticle> {
 		console.log('Mutation: updateBoardArticleByAdmin');
 		input._id = shapeIntoMongoObjectId(input._id);
-		return await this.boardArticleService.updateBoardArticleByAdmin(input);
+		return await this.boardArticleService.updateBoardArticleByAdmin(input, memberId);
 	}
 
 	@Roles(MemberType.ADMIN)

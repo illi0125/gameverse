@@ -3,6 +3,7 @@ import { NotFoundException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { GameStatus } from '../../libs/enums/game.enum';
 import { GameService } from './game.service';
+import { notificationStub } from '../notification/notification.testing';
 
 function gameQuery(result: unknown) {
 	return {
@@ -17,7 +18,13 @@ describe('Game owner reads', () => {
 		const game = { _id: gameId, memberId: ownerId, gameStatus: GameStatus.ACTIVE };
 		const gameModel = { findOne: jest.fn().mockReturnValue(gameQuery(game)) };
 		const memberService = { getMemberOrNull: jest.fn().mockResolvedValue(null) };
-		const service = new GameService(gameModel as any, memberService as any, {} as any, {} as any);
+		const service = new GameService(
+			gameModel as any,
+			memberService as any,
+			{} as any,
+			{} as any,
+			notificationStub() as any,
+		);
 
 		const result = await service.getGame(null as any, gameId as any);
 
@@ -27,14 +34,14 @@ describe('Game owner reads', () => {
 
 	it('uses a not-found response when the game is absent or not publicly visible', async () => {
 		const gameModel = { findOne: jest.fn().mockReturnValue(gameQuery(null)) };
-		const service = new GameService(gameModel as any, {} as any, {} as any, {} as any);
+		const service = new GameService(gameModel as any, {} as any, {} as any, {} as any, notificationStub() as any);
 
 		await expect(service.getGame(null as any, new Types.ObjectId() as any)).rejects.toBeInstanceOf(NotFoundException);
 	});
 
 	it('preserves games with missing owners in catalog aggregation', async () => {
 		const aggregate = jest.fn().mockResolvedValue([{ list: [], metaCounter: [] }]);
-		const service = new GameService({ aggregate } as any, {} as any, {} as any, {} as any);
+		const service = new GameService({ aggregate } as any, {} as any, {} as any, {} as any, notificationStub() as any);
 
 		await service.getGames(null as any, { page: 1, limit: 10, search: {} });
 
