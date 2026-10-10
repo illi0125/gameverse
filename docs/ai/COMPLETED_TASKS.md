@@ -806,3 +806,178 @@ All three Support pages were static placeholders (no queries, no handlers). They
 | 390 touch emulation | No custom bar (native overlay), no gutter, touch scroll works |
 | `yarn tsc --noEmit` | Passed |
 | Not exercised | Safari (remote automation not enabled), Firefox (not installed) |
+
+## About page redesign + About link (gameverse-next, approved plan 2026-10-10)
+
+- **Before:** `/about` was still the Nestar page in `LayoutBasic` (legacy banner). Phones saw `ABOUT PAGE MOBILE`. It had an empty "Our Developers" block, a made-up "Trusted by" logo row (Amazon, AMD, Cisco, Dropcam, Spotify), a fake phone number and a "Learn More" button that did nothing. No link on the site led to it, and it overflowed by 851px at 820.
+- **Now (`pages/about/index.tsx`, `withLayoutCatalog`, root `.gv-catalog.gv-about`):** five chapters, all with real data.
+  - 00 About (Void, the `/cs` hero atmosphere, `ONE CATALOG. / EVERY PLATFORM.` with the page's only load reveal). Live readout of `getGames` / `getAgents` `metaCounter` totals. CTAs to `/game` and `/developer`.
+  - 01 Mission (Paper; Unbounded counts from the enum sizes: 5 platforms, 10 genres, 3 modes; platform chips into `/game`).
+  - 02 How it works (Ultraviolet; Players / Developers / Community cut plates. The Developers plate goes to `/mypage?category=addGame` for an AGENT, otherwise `/account/join`).
+  - 03 Top developers (Paper; top 5 by `memberRank`, greyscale portraits that colour and lift on hover or focus; hidden when the list is empty).
+  - 04 Questions (Signal; links to `/cs?tab=inquiry` and `/cs`).
+  - Read-only queries. No mutations, routes or backend changes.
+- **Styles:** `scss/pc/about/about.scss` was rewritten as `.gv-about` (the legacy `#pc-wrap .about-page` rules were removed; nothing else used them). It reuses the catalog tokens, `.gv-chapter`, `.gv-cat-hero__*` and the `gv-cut` / `gv-cut-btn` / `gv-sheet-edge` mixins. Breakpoints are 1100 / 900 / 640. Under 640 the portraits become a snap rail. `hover: none` gets press states, and reduced motion turns off transitions and lifts.
+- **About link (user's choice):** footer Quick Links replaced six dead labels with real links: About Us → `/about`, FAQs → `/cs?tab=faq`, Notices → `/cs?tab=notice`, Contact Support → `/cs?tab=inquiry`. Terms, Privacy, Pricing and Services were dropped because those pages don't exist. The phone drawer (`Top.tsx`) gets a mono secondary `About Us` link (`.gv-nav-drawer__sublink`), Signal + `aria-current` on `/about`. The desktop header is unchanged. `LayoutBasic`'s unused `/about` banner case was removed.
+- **Docs:** About paragraph and drawer note in `docs/GAMEVERSE_DESIGN_SYSTEM.md`.
+
+| Check | Result |
+| --- | --- |
+| `yarn tsc --noEmit` | Passed after each step |
+| Headless Chrome 1440×900, 1280×800, 820 | All chapters render. Readout "10 games · 7 developers" (live DB); 5 portraits link to `/developer/detail?developerId=…`. No overflow (the old 851px overflow at 820 is gone). Display titles clear of the side column |
+| iPhone UA 360 / 390 / 430, 844×390 | `scrollWidth` = viewport; no text under 12px; no tap target under 44px; no console errors |
+| Reduced motion | Hero headline static (`transform: none`), content visible |
+| Footer (`/about`) | About Us / FAQs / Notices / Contact Support hrefs correct |
+| Drawer at 390 | `About Us` on `/about`: Signal, `aria-current="page"`, 44px; on `/game`: Haze, not current |
+| Not exercised | Backend down (the user's API was left running), signed-in AGENT step link, real devices / Safari |
+
+## Notification system — Phase 1: database + notification service (gameverse, approved 2026-10-10)
+
+Approved scope (defaults accepted): ten real events (likes on games, articles and profiles; comments on games, articles and profiles; follow; new game from a followed developer; game release to members who liked it; inquiry answered; admin removal of a game or article; announcement published), one stored notification per member per event, the existing `ws` gateway for real time, and a frontend bell, dropdown and `/notifications` page. Built in six phases with a review after each.
+
+- **Schema (`schemas/Notification.model.ts`, previously unused; the dev database had no `notifications` collection):** types `LIKE, COMMENT, FOLLOW, NEW_GAME, GAME_RELEASE, INQUIRY_ANSWER, MODERATION, ANNOUNCEMENT`; groups add `INQUIRY, NOTICE`. New optional `inquiryId`, `noticeId`, `commentId`, `readAt`; required internal `dedupeKey`. `authorId` and `receiverId` stay required. Indexes `{receiverId, createdAt:-1}`, `{receiverId, notificationStatus}`, unique `{dedupeKey}` (created in the dev database when the watch server reloaded). Field names used by `scripts/migrate-property-to-game.ts` are unchanged.
+- **`NotificationService` (`components/notification/`, registered in `ComponentsModule`, exported; nothing calls it yet):**
+  - `notify(event, receiverId)` and `notifyMany(event, receiverIds)` drop the actor and duplicate receivers. They validate the type/group pair and require the group's target ID (GAME → `gameId` …), then upsert with `$setOnInsert` on the dedupe key (`type:group:ref:author:receiver[:extra]`) in unordered `bulkWrite` batches of 500. They return only newly stored notifications and never throw: a failure is logged and an E11000 race keeps the inserted part.
+  - Audience helpers: `notifyFollowers` (follows by `followingId`), `notifyGameLikers` (GAME likes), `notifyActiveMembers` (ACTIVE members, cursor in batches).
+  - Titles are clipped to 120 characters and descriptions to 200. No links are stored; the frontend builds them from type and IDs.
+- **DTO / types:** `libs/dto/notification/notification.ts` (`Notification`, `Notifications`, nullable `authorData`; `dedupeKey` not exposed), `libs/types/notification.ts` (`NotificationEvent`, `StoredNotification`).
+
+| Check | Result |
+| --- | --- |
+| `notification.service.spec.ts` | 12/12: stored as WAIT on its dedupe key; no self-notification; repeat event not stored twice; `dedupeExtra` allows a deliberate repeat; invalid pair / missing target / blank title / unknown type rejected; fan-out dedupe; batches 500/500/201; database failure returns null, E11000 keeps the partial result; clipping; follower, liker and active-member audiences |
+| `npx jest` (all) | 14 suites, 59 tests passed |
+| `build:api`, `build:batch` | Compiled |
+| `tsc --noEmit` | Only the 2 existing errors in `member.service.spec.ts` (untouched) |
+| ESLint (new files) | 0 errors; the service has no warnings |
+| Running API (watch reload) | Boots; `getNotices` still answers |
+
+## Notification system — Phase 2: API, authorization, read states (gameverse, 2026-10-10)
+
+- **Operations (`components/notification/notification.resolver.ts`, all `AuthGuard`; the receiver is always `@AuthMember('_id')`, never client input):**
+  - `getMyNotifications(input: NotificationsInquiry): Notifications`. `page ≥ 1`, `limit` 1–50; `search.typeList` (≤ 8 `NotificationType`s) and `search.unreadOnly`. Newest first (`createdAt`, `_id`). `dedupeKey` is projected out, and the actor is joined as nullable `authorData`.
+  - `getUnreadNotificationCount: Int`, counted from stored WAIT documents (indexed).
+  - `markNotificationRead(notificationId: String): Notification`. A malformed ID returns `Bad Request`. The update filters `{_id, receiverId: me, WAIT}`. It is idempotent: an already-read notification returns unchanged with its first `readAt`. Another member's ID is "No data found!" and nothing changes.
+  - `markAllNotificationsRead: Int` returns how many were marked.
+- **DTO:** `libs/dto/notification/notification.input.ts` (`NotificationsInquiry`, `NotificationsSearch`).
+- **Incident during the phase:** the search input was first named `NISearch`, which `notice.input.ts` already uses. Code-first GraphQL refused to build the schema, so the watch server's app exited on reload (3007 down for a few minutes). Renamed to `NotificationsSearch`, and the watch server came back by itself. New guard test `libs/dto/graphql-names.spec.ts` fails on any duplicate `@InputType`/`@ObjectType` class name (verified against the old name).
+- **Security finding (existing, not fixed):** the runtime JWT secret is the literal `"undefined"` (see DECISIONS → Known Risks). Live checks below used tokens signed the way the running server does.
+
+| Check | Result |
+| --- | --- |
+| `notification.read.spec.ts` | 10/10: own-receiver match, sort, skip/limit, dedupe key projected out, author lookup nullable; unread and type filters stay inside the receiver; count filter; mark-one filter, readAt, projection; idempotent re-mark; other member's ID → not found; mark-all filter and count; AuthGuard on all four; malformed ID rejected and receiver taken from the token; `limit` 50 OK, 51 and `page` 0 rejected |
+| `npx jest` (all) | 16 suites, 70 tests passed |
+| `build:api`, `build:batch` | Compiled |
+| `tsc --noEmit` | Only the 2 existing errors in `member.service.spec.ts` |
+| ESLint (new files) | 0 errors |
+| Live, running API, two members, 2 temporary notifications (removed after; collection back to 0) | Anonymous → "Bearer Token is not provided!"; A lists 2 (with `authorData`), count 2, LIKE filter → [LIKE]; B lists 0; B marking A's notification → "No data found!" and A still has 2 unread; malformed ID → Bad Request; limit 51 → rejected; A mark one → READ with readAt, again → same readAt, count 1; mark all → 1, count 0; `dedupeKey` not in the `Notification` type |
+
+## Security fix: JWT secret (gameverse + gameverse-next, approved 2026-10-10)
+
+- **Problem:** the running API signed and verified tokens with the literal string `"undefined"`. `JwtModule.register` read `process.env.SECRET_TOKEN` when `auth.module.ts` was imported, before `ConfigModule.forRoot()` loaded `.env`. Anyone could forge a token for any member, including admins.
+- **Fix:** `components/auth/jwt.config.ts` (`jwtOptionsFactory`) used through `JwtModule.registerAsync({ imports: [ConfigModule], inject: [ConfigService] })`. A missing, blank or `"undefined"` secret stops the API from starting. Expiry is unchanged (30d).
+- **Frontend (`apollo/client.ts`):** when a request (other than Login/Signup) returns `UNAUTHENTICATED` while a token is stored, `logOut()` runs once and no error popup is shown. Old tokens, and those of deleted or blocked members, end as a clean guest session.
+- **Effect:** everyone signed in before the fix has to log in again.
+
+| Check | Result |
+| --- | --- |
+| `jwt.config.spec.ts` | 3/3: secret from config; refuses missing, blank or `"undefined"`; a token signed with `"undefined"` is rejected |
+| Live API | Token signed with `SECRET_TOKEN` accepted; token signed with `"undefined"` → UNAUTHENTICATED |
+| Headless Chrome, stale token, `/mypage` | Token removed within 1.5s, no SweetAlert; then the page's existing guest redirect to `/` |
+| `yarn tsc --noEmit` (frontend) | Passed |
+
+## Notification system — Phase 3: real-time delivery (gameverse, 2026-10-10)
+
+- **Gateway (`socket/socket.gateway.ts`, exported by `SocketModule`):** a `memberClients` index (memberId → that member's open connections) is filled on connect from the verified token and emptied on disconnect; guests are not indexed. New `isMemberOnline`, `onlineMembers`, `notifyMember(memberId, payload)`, which sends only to that member's OPEN connections and returns how many got it. Chat (`info`, `getMessages`, `message`) is unchanged.
+- **Service:** after `notifyMany` stores notifications, `deliver` sends `{event: 'notification', notification, unread}` to online receivers only. It does one author lookup (nick, image, type) and one grouped unread-count aggregate for all online receivers, and nothing at all if nobody is online or nothing new was stored. The payload has no dedupe fields. `markNotificationRead` (when something changed) and `markAllNotificationsRead` (when the count changed) send `{event: 'notificationCount', unread}` to the member's other tabs. Delivery is best effort: failures are logged, and storage results are returned anyway.
+- **Payload contract for the frontend:** `notification` uses the `Notification` GraphQL shape plus `authorData {_id, memberNick, memberImage, memberType}`; `notificationCount` carries only `unread`.
+
+| Check | Result |
+| --- | --- |
+| `notification.live.spec.ts` | 7/7: payload with author and count to an online receiver; no queries or sends when offline; nothing for a duplicate; one count query for a fan-out, offline skipped; storage survives a delivery failure; count pushed after mark one / mark all; no push when nothing changed or offline |
+| `socket.gateway.spec.ts` | 4/4: only that member's tabs (not other members or guests); closed connections forgotten; non-OPEN skipped; chat still reaches everyone |
+| `npx jest` (all) | 19 suites, 84 tests passed |
+| `build:api`, `build:batch` | Compiled |
+| `tsc --noEmit` | Only the 2 existing errors in `member.service.spec.ts` |
+| ESLint | New and changed code 0 errors; the gateway's 4 existing errors are unchanged |
+| Live, running API, real sockets (A ×2 tabs, B, guest, forged token), 2 temporary notifications (removed) | Mark one → both A tabs `unread 1`; mark all → both `0`; B, guest and forged socket receive nothing; nothing sent when there is nothing to mark; after closing tab 2 only tab 1 receives; chat message still broadcast |
+| Not exercised live | The `notification` event itself (no event is wired until Phase 5); covered by the unit tests |
+
+## Notification system — Phase 4: bell, dropdown, Notification Center (gameverse-next, 2026-10-10)
+
+- **Data layer:** `GET_MY_NOTIFICATIONS`, `GET_UNREAD_NOTIFICATION_COUNT` (`apollo/user/query.ts`), `MARK_NOTIFICATION_READ`, `MARK_ALL_NOTIFICATIONS_READ` (`apollo/user/mutation.ts`). Types `libs/types/notification/*`. `libs/enums/notification.enum.ts` extended (existing file; values only added). `liveNotificationVar` in `apollo/store.ts`.
+- **`useNotificationFeed` (called once, in `Top`):** count query (skipped for guests), refetched on window focus or the tab becoming visible (the socket does not reconnect on its own). Socket `notification` / `notificationCount` events write the count into the Apollo cache, and a new notification goes into `liveNotificationVar`. It uses `addEventListener('message')`, so the Chat widget's `onmessage` is untouched, and the listener is removed on unmount or socket change.
+- **`NotificationBell`:** replaces the static, non-working `NotificationsOutlinedIcon`. Signed-in only, left of the avatar, and outside `.lan-box`, so it stays on phones.
+  - Dropdown (≥900px): latest 8 (`network-only` when opened), Mark all read, footer link, loading / error / empty states. Escape, outside click and route change close it.
+  - Opening an entry marks it read (count refetched) and follows its link.
+  - Below 900px the bell is a link to `/notifications`.
+- **`NotificationItem` + `notificationMeta.ts`:**
+  - Wording, glyph and tone per type.
+  - Links are built only from type plus validated 24-hex IDs. Game → `/game/detail?id=`, article → `/community/detail?id=` (the page takes its category from the article), profile events → `/member?memberId=<actor>`, inquiry → `/cs?tab=inquiry`, announcement → `/cs?tab=notice`, moderation → `/mypage?category=myGames|myArticles`.
+  - A deleted actor reads "A deleted account". A profile event's title is hidden when it repeats the actor.
+- **`/notifications` (`LayoutCatalog`):**
+  - Filters live in the URL (`?category=&unread=1`, shallow).
+  - 20 per page with Load more (deduplicated).
+  - Live arrivals for the current category go on top.
+  - Mark one / mark all update the list in place (and drop rows under Unread only). The title shows `(n)`.
+  - Guest gate, loading placeholder rows, error with Try again, empty copy per filter.
+- **Drawer:** "Notifications" with a Signal count (signed-in) above About Us. New `Notifications` locale key (en / kr / ru).
+- **Styles:** `scss/pc/common/gvNotifications.scss` (bell, portal dropdown, shared rows), `scss/pc/notifications/notifications.scss` (page); both imported in `scss/pc/main.scss`. Design system doc: new "Notifications" section and drawer note.
+
+| Check | Result |
+| --- | --- |
+| `yarn tsc --noEmit` | Passed |
+| Headless Chrome 1440, signed-in member, 11 temporary notifications of all 8 types (removed after; collection back to 0) | Old icon gone; bell "Notifications, 8 unread" / badge 8; dropdown 8 rows, first "Leo liked your game" → `/game/detail?id=…`; Escape closes; opening an entry navigates and the badge goes 8 → 7 |
+| `/notifications` 1440 | Title "(7) Notifications"; readout "7 unread · 11 notifications"; 6 day groups; 7 Mark read buttons; Activity tab → `?category=activity` and only Like / Comment / Follower; Unread only → 2 rows, all unread; Mark read → row leaves, badge 6; Mark all → 0 unread rows, badge gone, "All caught up", button disabled |
+| Live, other tab (GraphQL from outside the browser) | Mark one → badge 3 → 2; mark all → badge gone, readout "All caught up", title without count |
+| Bell in other layouts (home, member, about, game detail) | Same 44px position, badge correct, no overflow |
+| 390 iPhone UA | `scrollWidth` 390; bell is a link to `/notifications`; no text under 12px; no tap target under 44px; tabs swipe; drawer "Notifications 9+" active on the page |
+| Guest | No bell; gate "Sign in to see your notifications" |
+| Console errors | None |
+| Not exercised | A live `notification` arrival (nothing creates one until Phase 5), ESLint (the frontend has no ESLint config), Safari / real devices |
+
+## Notification system — Phase 5: real events wired (gameverse, 2026-10-10)
+
+- **Wired (each module imports `NotificationModule`; `NotificationService` imports no domain module, so there are no cycles):**
+  - `GameService`: like (owner, only when the like is added), `createGame` → followers (background), UPCOMING → ACTIVE in `updateGame` / `updateGameByAdmin` → likers (background, `announceRelease`), admin DELETE → owner (`MODERATION`, `dedupeExtra` = deletion time). `updateGameByAdmin(input, adminId?)`; the resolver passes `@AuthMember('_id')`.
+  - `BoardArticleService`: like → author; admin DELETE (not a restore) → author (`MODERATION`). `updateBoardArticleByAdmin(input, adminId?)`; the resolver passes the admin it already received.
+  - `MemberService`: profile like → that member (title = liker's nick, self-likes skipped). `FollowService.subscribe` → followed member (title = follower's nick).
+  - `CommentService.createComment`: game / article / profile owner. The owner comes from the counter update's returned document (no extra query), and the comment text becomes `notificationDesc`. A missing target sends nothing.
+  - `InquiryService.answerInquiry` → asker (`dedupeExtra` = `answeredAt`, so each re-answer is new).
+  - `NoticeService`: `createNotice` ACTIVE NOTICE, or `updateNotice` that turns a notice into a public NOTICE (reads the previous status and category first) → every active member, in the background. Later edits to a live notice stay quiet.
+- **Safety:** single notifications are awaited but `notify` never throws; fan-outs use `void`. New `NotificationService.memberNick` never throws. Tests prove that likes, game creation, inquiry answers and notice publishing succeed with the notification database down.
+- **Tests:** `notification.events.spec.ts` (19). Shared stub `notification/notification.testing.ts`. Existing game / board-article / inquiry / notice specs now pass the stub (arity only; prettier re-wrapped one block in `inquiry.service.spec.ts`).
+
+| Check | Result |
+| --- | --- |
+| `notification.events.spec.ts` | 19/19: game like / unlike / database down; new game → followers, creates even if the lookup fails; release by owner and by admin; no release on other edits; admin removal signed by the admin, nothing on restore or a repeat delete; article like and admin removal / restore; comment on game / article / profile with excerpt; missing target; profile like with name, not on unlike or self; follow; inquiry answer with `dedupeExtra`, answer survives database down; announcement on publish only (not draft or FAQ), on draft → ACTIVE and FAQ → NOTICE, not on edit; notice saves with database down |
+| `npx jest` (all) | 20 suites, 103 tests passed |
+| `build:api`, `build:batch` | Compiled |
+| `tsc --noEmit` | Only the 2 existing errors in `member.service.spec.ts` |
+| ESLint, changed files vs `HEAD` | No file has more errors than before (several have fewer) |
+| Live, running API, real mutations and sockets (developer Leo, player David, Admin) | Like Genshin Impact → Leo gets LIKE; unlike + like → nothing new; self-like → nothing; profile like → LIKE/MEMBER; follow → FOLLOW; unfollow + follow → nothing new; comment → COMMENT with the text; inquiry answered → David gets INQUIRY_ANSWER; temporary UPCOMING game → David (follower) gets NEW_GAME; set ACTIVE after David's like → GAME_RELEASE; admin delete → Leo gets MODERATION; notice draft → nothing; published → both get ANNOUNCEMENT, 12 stored = active members minus the admin; edit → nothing. Unread counts in the payloads increased one by one |
+| Cleanup after the live run | Like / follow state, comment, inquiry, game, notice and 22 notifications (including NEW_GAME copies to Leo's other followers) removed; snapshot of counters, likes, follows and collection sizes identical before and after |
+
+## Notification system — Phase 6: verification (gameverse + gameverse-next, 2026-10-10)
+
+- **End to end in the browser (David signed in, Leo acting through the API; reverted afterwards):** Leo likes David's profile → the open Notification Center shows "Leo liked your profile" (unread, on top) within ~0.5s, badge 1, title "(1) Notifications", the bell rings. Five client-side navigations later there is still exactly one socket `message` listener (instrumented `WebSocket.prototype`). With the dropdown open, Leo follows David → the list refreshes to "Leo started following you" above the like, "2 unread". Opening it goes to `/member?memberId=<Leo>` and the badge drops to 1. Chat send still works (own message rendered, no popups). Shown count = stored WAIT count = API count (1).
+  - A first run left the follow entry on `/game` and showed a chat "not connected" popup: Next.js dev compiled `/member` on demand and reloaded. With pages compiled the same run passes; a direct repro of the click navigates within 0.5s.
+- **Fixes from this phase:**
+  - `socket.gateway.ts`: a connection that closes while its token is still being checked is no longer registered (previously its disconnect ran first, so it stayed in `clientsAuthMap` and the new per-member index, making `isMemberOnline` falsely true). The counter stays balanced. New test.
+  - `Notification.model.ts`: list index is now `{receiverId, createdAt:-1, _id:-1}` to match the sort (explain showed an in-memory sort); the superseded dev index was dropped (collection empty).
+  - `/notifications` hero headline capped at `min(17vw, 22vh)` below 900px, so phone landscape shows the headline and readout on the first screen.
+- **Security re-run against the current API:** guest → "Bearer Token is not provided!"; member B sees 0 of A's notifications, and marking A's → "No data found!" (A unchanged); malformed ID → Bad Request; limit 51 rejected; forged `"undefined"` token rejected on GraphQL and gets nothing on the socket; socket events reach only the receiver's tabs (not other members or guests); `dedupeKey` not exposed. Schema: `NotificationsInquiry {page, limit, search{typeList, unreadOnly}}`, `markNotificationRead(notificationId)`; no operation takes a recipient.
+- **Indexes (explain):** list → `receiverId_1_createdAt_-1__id_-1` (no in-memory sort); unread filter, count, mark all and live grouped count → `receiverId_1_notificationStatus_1`; mark one → `_id_`; dedupe upsert → `dedupeKey_1`; follower fan-out → `followingId_1_followerId_1`. **Open:** game-liker fan-out scans `likes` (no `likeRefId`-first index); proposed in NEXT_STEPS, not changed (touches the Like model).
+- **Query cost by design:** a like or comment adds one `bulkWrite`, plus (only if the receiver is online) one author lookup and one grouped count. Profile likes and follows add one nick lookup. Reads are single indexed queries. Fan-outs write in batches of 500 in the background.
+- **Frontend regression (headless Chrome):** the whole Phase 4 suite passes again; 360, 390 and 844×390: no overflow, no text under 12px, no tap target under 44px; reduced motion: no headline reveal and no bell animation; guest gate; no console errors.
+
+| Check | Result |
+| --- | --- |
+| `npx jest` (backend) | 20 suites, 104 tests passed |
+| `build:api`, `build:batch` | Compiled |
+| `tsc --noEmit` backend / `yarn tsc --noEmit` frontend | Only the 2 existing `member.service.spec.ts` errors / passed |
+| ESLint | No changed file has more errors than at `HEAD` |
+| Data after all live runs | `notifications` collection 0 documents; counters, likes, follows and collection sizes as before |
+
+### Notification system — summary
+
+Ten real events (likes on games, posts and profiles; comments on games, posts and profiles; follows; new games from followed developers; releases of liked games; support answers; moderation removals; announcements) create stored, per-member notifications with duplicate and self-notification protection. They are delivered live over the existing chat socket to the receiver's open tabs only, and shown in a navbar bell, a dropdown and the `/notifications` Notification Center. Found and fixed along the way: the runtime JWT secret was the literal `"undefined"`, a GraphQL type-name clash that stopped the API, and closed sockets registered after disconnect.

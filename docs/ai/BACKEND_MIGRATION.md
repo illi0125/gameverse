@@ -89,8 +89,28 @@ Notices, FAQ and 1:1 inquiries are real data now (previously the frontend hardco
 
 - `updateBoardArticleByAdmin` now matches any article (previously only `ACTIVE`), so an admin can restore a deleted article (`DELETE → ACTIVE`). The author's `memberArticles` counter changes only when the status actually changes (−1 on delete, +1 on restore). `removeBoardArticleByAdmin` still requires `DELETE`.
 
+## Notifications (2026-10-10)
+
+- **Storage:** `notifications` collection (`schemas/Notification.model.ts`), one document per member per event, unique `dedupeKey`, indexes `{receiverId, createdAt:-1, _id:-1}` (list sort, no in-memory sort) and `{receiverId, notificationStatus}` (unread count, mark all). The dev database's superseded `receiverId_1_createdAt_-1` was dropped on 2026-10-10; other environments never had the collection. Types `LIKE, COMMENT, FOLLOW, NEW_GAME, GAME_RELEASE, INQUIRY_ANSWER, MODERATION, ANNOUNCEMENT`; groups `MEMBER, ARTICLE, GAME, INQUIRY, NOTICE`; status `WAIT` (unread) / `READ` with `readAt`.
+- **API (all `AuthGuard`; the receiver is always the token's member):** `getMyNotifications(input: NotificationsInquiry)` (page, limit ≤ 50, `search.typeList`, `search.unreadOnly`; actor joined as nullable `authorData`), `getUnreadNotificationCount: Int`, `markNotificationRead(notificationId: String)` (idempotent; someone else's ID is "No data found!"), `markAllNotificationsRead: Int`.
+- **Real time:** the existing `ws` gateway sends `{event: 'notification', notification, unread}` to the receiver's open connections and `{event: 'notificationCount', unread}` after reads. Nothing is broadcast; chat events are unchanged. Delivery is best effort on top of storage.
+- **Events (`NotificationService.notify*` never throws; fan-outs run in the background):**
+
+| Event | Receiver | Type |
+| --- | --- | --- |
+| `likeTargetGame` / `likeTargetBoardArticle` / `likeTargetMember` adds a like | Game owner / article author / that member | `LIKE` |
+| `createComment` on a game, article or profile | Its owner (comment text as `notificationDesc`) | `COMMENT` |
+| `subscribe` | The followed member | `FOLLOW` |
+| `createGame` | The developer's followers | `NEW_GAME` |
+| `updateGame` / `updateGameByAdmin` UPCOMING → ACTIVE | Members who liked the game | `GAME_RELEASE` |
+| `answerInquiry` (every answer) | The member who asked | `INQUIRY_ANSWER` |
+| `updateGameByAdmin` / `updateBoardArticleByAdmin` → DELETE (each removal) | The owner; signed by the admin (resolvers now pass `@AuthMember('_id')`) | `MODERATION` |
+| `createNotice` / `updateNotice` when a NOTICE becomes ACTIVE (not on later edits) | Every active member | `ANNOUNCEMENT` |
+
+  No self-notifications; unliking and liking again, or unfollowing and following again, never notify twice. Live Chat creates no notifications.
+
 ## Compatibility Boundary
 
 This release intentionally has no Property API alias or dual-read period. API and batch must be deployed together after a successful dry run during a write-maintenance window. The previous application build and migration snapshots are required for rollback.
 
-Still deferred: wishlist, structured ratings/reviews, member levels, inventory, carts, orders, payments, Notification feature wiring, GameArticle renaming, and extraction of API/batch shared types into a library.
+Still deferred: wishlist, structured ratings/reviews, member levels, inventory, carts, orders, payments, GameArticle renaming, and extraction of API/batch shared types into a library.

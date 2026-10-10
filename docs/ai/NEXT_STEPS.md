@@ -18,9 +18,10 @@
 | Add transaction or reconciliation handling around runtime social counters | Likes, views, comments, and counters resist partial failures |
 | Remove the temporary `memberGames` read guard after full migration verification | Member reads rely exclusively on persisted Game-era counters |
 | Add an authenticated GraphQL schema integration harness | Breaking contract changes are captured automatically |
+| Add a `likes` index `{likeGroup, likeRefId}` | Game-release fan-out (`notifyGameLikers`) stops scanning `likes`; awaiting approval because it touches the Like model |
 | Add structured Game reviews and ratings | Reserved counters gain an ownership-aware source of truth |
 | Add a distinct wishlist model | Favorites/likes no longer have to stand in for wishlist behavior |
-| Wire the Notification feature module | The migrated Game notification schema gains API behavior |
+| ~~Wire the Notification feature module~~ (done 2026-10-10, see BACKEND_MIGRATION → Notifications) | Follow-up: notification retention / cleanup policy and an admin view of delivery failures |
 
 ## P2 Architecture and Commerce
 

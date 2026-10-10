@@ -34,6 +34,8 @@
 | Board article reads keep a deleted author as `memberData: null` | A deleted (or missing) author made `getBoardArticle` throw "No data found!", so every post by that member became unreadable and the frontend showed a global alert; Game reads already follow this rule | Posts by deleted accounts stay public with an anonymous byline ("Deleted account") | Hide such posts; restore accounts; keep throwing |
 | Reuse the orphaned Notice schema for notices + FAQ, and give 1:1 inquiries their own collection | Notices and FAQ entries share one shape (title, body, status, author); inquiries have an owner, a reply and a workflow that would overload Notice | Two support collections instead of one | One collection for everything; three separate modules |
 | Seed the former hardcoded CS content instead of discarding it | The public CS page must not go empty when it switches to the API | Seed data must be maintained in `scripts/data/cs-content.ts` until it is edited in the admin | Start empty; keep frontend fallbacks |
+| Store notifications per member, deliver live over the existing chat `ws` gateway | Offline members lose nothing; no new dependency (Socket.IO) and no second connection; per-member index keeps delivery targeted | Delivery is best effort and the socket does not reconnect by itself, so the frontend also refetches the count | Socket.IO; GraphQL subscriptions; polling only |
+| One notification per member per event (fan-out on write, `dedupeKey` unique) | Simple per-member read state and pagination; repeats (unlike/like, unfollow/follow) never notify twice | Announcements write one document per active member | Shared announcement record + per-member read marker |
 
 ## Current Compatibility Boundaries
 
@@ -57,6 +59,8 @@ Property GraphQL/Mongoose contracts are no longer protected; they were replaced 
 - JWTs still contain a broad snapshot of member data, although authorization now reloads the current active member and role from MongoDB.
 - Password changes through the generic member update path are not re-hashed.
 
+- **JWT secret was the literal string `"undefined"` at runtime (found and fixed 2026-10-10).** `AuthModule` read `process.env.SECRET_TOKEN` when the file was imported, before `ConfigModule.forRoot()` had loaded `.env`, so forged tokens were accepted. Now `JwtModule.registerAsync` + `ConfigService` (`components/auth/jwt.config.ts`), and the API refuses to start without a real secret. Tokens issued before the fix stop working; the frontend signs such a session out quietly (`apollo/client.ts`, `UNAUTHENTICATED` with a stored token).
+
 ### Files and transport
 
 - GraphQL Playground and permissive credentialed CORS are enabled without environment-specific restrictions.
@@ -69,7 +73,6 @@ Property GraphQL/Mongoose contracts are no longer protected; they were replaced 
 ### Architecture
 
 - The batch app imports implementation types directly from the API app.
-- Notice and Notification schemas are currently orphaned.
 - Migration and rollback still require coordinated API/batch deployment and a maintenance window.
 
 These risks are documented rather than silently changed because security hardening and domain redesign require their own tests and rollout plans.
