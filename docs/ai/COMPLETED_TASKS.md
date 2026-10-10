@@ -981,3 +981,93 @@ Approved scope (defaults accepted): ten real events (likes on games, articles an
 ### Notification system — summary
 
 Ten real events (likes on games, posts and profiles; comments on games, posts and profiles; follows; new games from followed developers; releases of liked games; support answers; moderation removals; announcements) create stored, per-member notifications with duplicate and self-notification protection. They are delivered live over the existing chat socket to the receiver's open tabs only, and shown in a navbar bell, a dropdown and the `/notifications` Notification Center. Found and fixed along the way: the runtime JWT secret was the literal `"undefined"`, a GraphQL type-name clash that stopped the API, and closed sockets registered after disconnect.
+
+## Cinematic page transitions — GameVerse Portal + Artwork Expansion (gameverse-next, 2026-10-11, awaiting review)
+
+- **Scope (as requested, not global yet):** Home ↔ Games listing ↔ Game detail (`transitionRoutes.ts`). No API, auth, state, route, layout or page-design changes; no new dependencies (GSAP 3.13 already present).
+- **Approach:** one `PortalTransition` component in `_app` (persists across pages; renders after mount, so no hydration mismatch).
+  - Plain left clicks on links between in-scope routes are intercepted in the capture phase. `preventDefault` makes Next's `Link` skip its own push; the component's `onClick` still runs. The same destination is pushed with its locale at 70% of the cover, and the reveal waits for both the full cover and `routeChangeComplete`.
+  - Back/Forward and programmatic navigation are not intercepted: a fast cover starts on `routeChangeStart`.
+  - Never intercepted: query-only changes (filters, another game id), out-of-scope routes, modifier or middle clicks, `target`/`download`, `[data-no-transition]`.
+  - Newest destination wins during a cover (pending pushes are cancelled through a generation counter).
+  - Fail-safes: each cover resolves within 1.2s whatever happens to its timeline; route error → reveal; cancelled route → wait for the newer one; 8s watchdog removes the overlay. The overlay blocks clicks only while active.
+- **Artwork Expansion:** the source is the clicked card's `.gv-cat-card__art img` (visible and loaded); the target is the detail hero's first `.gv-gd-hero__plate`. Its image must be loaded (waits ≤ 1.6s), otherwise the art dissolves (phones, where the fan is hidden, slow images, or a redirect mid-flight). Off with reduced motion.
+- **Intro:** reaching `/` through the portal calls `markIntroDone()`, so the intro doesn't play right after a portal (decision to review).
+- **Files:** new `libs/components/transition/{PortalTransition.tsx,transitionRoutes.ts}`, `scss/pc/common/gvPortal.scss`; changed `pages/_app.tsx` (mount), `scss/pc/main.scss` (import), `docs/GAMEVERSE_DESIGN_SYSTEM.md` ("Page transitions").
+
+| Check (production build on :3011, API URLs from `.env.development` passed through the environment) | Result |
+| --- | --- |
+| `yarn tsc --noEmit`, `yarn build` | Passed / compiled |
+| Listing → detail (art), detail → listing, listing → home (portal), Back (fast portal) | Correct destination every time; URL at ~0.51–0.56s after the click; overlay 1.1–1.3s in total (≈0.85s of animation + the new page's first render); no overlay left; no intro after the portal |
+| Query-only (footer "Free Games" on `/game`), out of scope (Games → Developers) | No overlay |
+| Rapid: 3 clicks on a card + "Home" during the cover | One route start; ends on `/`; overlay gone after 1.2s |
+| Keyboard Enter on "Games" | Covered (portal from the link), lands on `/game`; focus then on body as before; route announcer reads the page title; portal has 0 focusables |
+| Home Back scroll memory after a portal round trip | 9873 → 9873 |
+| ScrollTrigger after transitions | Home hero scene scrubs after a portal arrival; detail fan parallax runs after the art transition |
+| Stalled route / route error / cancelled route (router events emitted in page) | Watchdog frees the screen at ~8s (no click blocking afterwards); error reveals in ~0.9s; cancelled waits, then the watchdog |
+| Reduced motion | Fade only, 0.46s in total, no art flight |
+| 390 phone | Art (light) 1.09s, drawer → Games light portal 1.03s, no overflow, game title on two lines |
+| SweetAlert / chat | Alert above everything (z 1060), portal idle; chat opens |
+| Console errors | None |
+| Not exercised | Real devices / Safari; very slow networks (only the watchdog path was simulated) |
+| Note | A production build needs `REACT_APP_API_*` in its environment (they are only in `.env.development`); not changed |
+
+## White screen before the homepage intro (gameverse-next, 2026-10-11)
+
+- **Cause:** on a fresh visit the page was fully white for ~1.6s (≈0.5–2.1s) before PRESS START. In `next dev`, Next hides `<body>` (`style[data-next-hide-fouc]`) until its JS-injected CSS is ready; `<html>` had no background, so the browser's white canvas showed. The white body background comes from MUI `CssBaseline` (also JS).
+- **Fix:**
+  - `pages/_document.tsx`: inline `html{background:#000}` first in `<head>`, so the canvas is black from the first byte.
+  - `scss/app.scss`: `html{background-color:#fff}` once the stylesheet applies (pages look exactly as before), but `html:has(style[data-next-hide-fouc])` stays black while dev still hides the body.
+  - The scrollbar's dialog-lock rule (Void gutter) is unchanged and still wins.
+
+| Check | Result |
+| --- | --- |
+| Dev, fresh uncached visit to `/`, screencast (3 runs) | Before: white frames at 542 / 1175ms. After: no white frame; black → PRESS START |
+| After load: `/`, `/game`, `/about`, `/member`, `/account/join`, `/notifications` | `html` and `body` `rgb(255,255,255)`, as before |
+| Dialog lock (`body` overflow hidden) | `html` turns Void (unchanged) |
+| Production, `/` / `/game` / `/about`, normal and throttled | Homepage dark from the first frame; other pages styled from the first frame; no white or black flash |
+| `yarn tsc --noEmit` | Passed |
+
+### Transition redesign: GameVerse Shutter replaces the Portal (gameverse-next, 2026-10-11, awaiting review)
+
+- **Feedback:** Home ↔ Games "feels like it crashed". Likely causes: a UV plate with a black hole popping out of the click point; a static black screen with a giant word; the GSAP timeline stalling while the new page rendered; and on Back the new page appeared before the cover, then was covered and revealed again.
+- **New design (same architecture, interception, fail-safes and Artwork Expansion):** five Void slats (three on phones) with a UV leading edge and the cartridge notch sweep up one after another and continue upward to reveal the page (cover 0.44s, reveal 0.5s, 36ms stagger). A small HUD (`■ GAMEVERSE`, destination, running Signal line) fades in only if loading takes longer than a moment. The slats are CSS transitions on `transform` driven by classes (`is-covering` → `is-revealing`, `is-resetting` to rest), so they run on the compositor and don't freeze during the page render. Back/Forward and programmatic navigation: the closed shutter fades in over 70ms (before the swap), then sweeps away downward for Back/Forward (`popstate` sets the direction). Reduced motion: the slats fade.
+- **Files:** `libs/components/transition/PortalTransition.tsx` (portal cover/reveal replaced by `coverShutter` / `revealShutter`, `revealAny` for errors), `scss/pc/common/gvPortal.scss` (slats, HUD, instant close, reduced motion; old plates and frame removed), design system "Page transitions".
+
+| Check (production build) | Result |
+| --- | --- |
+| Screencast Home → Games / Back to Home | Continuous sweep in → short HUD hold → sweep out; longest gap between painted frames 59 / 66ms; Back no longer shows the homepage before the cover |
+| Flows | Listing → detail (art) 1.30s, detail → listing 1.29s, listing → home 1.34s, Back 0.65s; query-only and out-of-scope: no overlay; no intro after the transition |
+| Edge | Rapid clicks → one route, ends on `/`; keyboard OK; Home Back scroll 9873 → 9873; reduced motion 0.49s; phone art 1.10s, drawer → Games 1.20s, no overflow |
+| Fail-safes | Stalled route freed at ~8s; error reveals in 0.57s; cancelled waits, then the watchdog |
+| Coordination | Home hero scene scrubs; detail parallax runs; focus as before; 0 focusables; SweetAlert above, portal idle; chat opens |
+| `yarn tsc --noEmit`, `yarn build` | Passed; no console errors |
+- **Follow-up (2026-10-11):** larger transition HUD on request. Destination word `clamp(3.5rem, 7vw, 7.5rem)` (was `clamp(1.75rem, 3.2vw, 3rem)`; 101px at 1440, 62px at 390), kicker 15px (13px on phones), Signal loading line 3px × `clamp(220px, 22vw, 360px)`. Checked at 1440 and 390: no overflow, no console errors.
+
+## Shutter transitions on every public page (gameverse-next, approved 2026-10-11)
+
+- **Scope:** `transitionRoutes.ts` now allows every public page and excludes only the admin panel (`/_admin`, both directions). Still never: query-only changes (filters, tabs, another id), shallow routes, modified clicks, `target`/`download`, `[data-no-transition]`.
+- **Audit before widening:** no `Link` uses `replace`/`shallow`/`legacyBehavior`; every `preventDefault` in public pages is a form submit or an on-page hash jump (never intercepted); the mount-time `router.replace` calls (developer, member, mypage, community) are query-only or shallow, so they are skipped.
+- **Labels:** the HUD names the section (Developers, Community, Help, About, My Page, Profile, Notifications, Log in); item pages (`*/detail`, `/member`) use the clicked card's or title link's own text (≤ 60 characters), e.g. the developer's name or the post title.
+- **Files:** `libs/components/transition/transitionRoutes.ts` (scope, labels, `isItemPage`), `PortalTransition.tsx` (labels for all item pages), design system doc.
+
+| Check (production build, signed in) | Result |
+| --- | --- |
+| Tour: Home → Developers → developer detail → Community → post detail → CS → About (footer) → My Page → Notifications (bell dropdown) → Games → game detail (art) → Home (logo) | Every hop covered, correct destination, overlay cleared in 1.32–1.42s; labels "Developers", "Minamino", "Community", the post title, "Help", "About", "My Page", "Notifications", "Games", "Genshin Impact", "Home" |
+| Query-only link on `/developer`, link to `/_admin` | No transition |
+| Phone drawer → Community / Games, 6 runs (also right after an admin visit) | Covered, cleared in 1.17–1.21s every time; no overflow at 390 |
+| Console errors / `yarn tsc --noEmit` | None / passed |
+| Note | In the very first tour one phone run kept the overlay past 6s (after an admin redirect and Back steps); it did not reproduce in 7 later runs; the 8s watchdog still bounds it |
+
+## Game page uses the same Shutter + Back direction fix (gameverse-next, 2026-10-11)
+
+- **Request:** Games card → Game detail looked different from every other page (Artwork Expansion). Removed it: the card click now uses the same Shutter, with the game's title in the HUD. `PortalTransition.tsx` was rewritten around the Shutter only (no GSAP timelines, artwork markup or `art` mode); `gvPortal.scss` lost the artwork styles. Long HUD titles wrap to two lines on phones.
+- **Bug found and fixed:** Back swept up instead of down. Next starts a Back/Forward route change from its own `popstate` handler, before any listener of ours (even capture phase), so a popstate flag was always late. Direction now comes from Next's history entry keys: a list of keys seen in this tab plus our position; when a route change starts, `history.state` already holds the destination entry, and an earlier known key means Back (down), otherwise up.
+
+| Check (production build) | Result |
+| --- | --- |
+| Games card → detail | 5 slats, no artwork element, label "Apex Legends", 1.34s; card cover never hidden |
+| Directions: click, click, Back, Back, Forward, click | up, up, down, down, up, up |
+| Site tour (all public pages, signed in), phone drawer | Every hop covered, correct destination, cleared; no overflow at 390 |
+| Edge / fail-safes | Rapid clicks end on `/` with one route start; keyboard OK; Home Back scroll 9873 → 9873; reduced motion 0.48s; stalled route freed at ~8s; error reveals in 0.57s |
+| `yarn tsc --noEmit`, `yarn build`, console | Passed; no errors |
