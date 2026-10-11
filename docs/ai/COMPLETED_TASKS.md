@@ -1071,3 +1071,211 @@ Ten real events (likes on games, posts and profiles; comments on games, posts an
 | Site tour (all public pages, signed in), phone drawer | Every hop covered, correct destination, cleared; no overflow at 390 |
 | Edge / fail-safes | Rapid clicks end on `/` with one route start; keyboard OK; Home Back scroll 9873 → 9873; reduced motion 0.48s; stalled route freed at ~8s; error reveals in 0.57s |
 | `yarn tsc --noEmit`, `yarn build`, console | Passed; no errors |
+
+## Header language switch redesign (gameverse-next, 2026-10-11)
+
+- **Scope:** design only. `langClick` / `langClose` / `langChoice`, the `lang` state, `localStorage.locale` and the locale route push are unchanged.
+- **Trigger:** 44px square hair-bordered button next to the bell/avatar: flag + mono code (`EN` / `KR` / `RU`) + caret; white with black text while open (caret flips), Signal focus outline, press `scale(.96)`.
+- **Menu:** MUI `Menu` with a Void panel (no radius or shadow, like the notification dropdown): head `■ LANGUAGE` · count; rows built from the existing `languages` array: mono index `01–03`, flag, uppercase Archivo 800 label, mono code. Current language = `selected` (3px Signal bar, Signal index/code, focus lands on it when opened); keyboard focus = Signal outline.
+- **Bug fixed through CSS:** `langChoice` reads `e.target.id`, but the Korean flag image had `id="uz"`, so clicking the flag itself stored `uz`. The images are gone, and the item's children have `pointer-events: none`, so the click target is always the `<li>` with the right id.
+- **Files:** `libs/components/Top.tsx` (markup; removed the inline `StyledMenu` and its `alpha`/`styled` imports), new `scss/pc/common/gvLangMenu.scss` (imported in `main.scss`), `main.scss` (old `.btn-lang` / `.img-flag` rules under `.lan-box` removed; `lan-box` margin 28 → 14px). The paper selector is `.MuiPaper-root.MuiPopover-paper.gv-lang-menu` to beat the global `.MuiPaper-root.MuiMenu-paper { padding: 8px }`.
+
+| Check (dev, 1440×900, `/game`) | Result |
+| --- | --- |
+| Click flag in row → `/kr/game`, `locale=kr`; keyboard ↓ + Enter → `/ru/game`, `ru`; click label → `/game`, `en` | Passed |
+| Closed / hover / open / keyboard focus / selected states | Rendered as designed; no console errors |
+| `yarn tsc --noEmit` | Passed |
+
+## Production audit — Phase 1 report + Group 1 fixes (gameverse-next, 2026-10-11)
+
+- **Audit:** full report in `gameverse-next/docs/PRODUCTION_AUDIT.md`. Verdict **NOT READY**: 8 critical items. Backend: signup as ADMIN, self-promotion via `updateMember`, plain-text password updates, HTML/SVG uploads. Data safety: `MONGO_DEV` = `MONGO_PROD`. Frontend: open redirect, password in the console. Dependencies: vulnerable `next@14.2.0` and backend packages.
+- **Group 1 fixed (frontend only, no API or design change):**
+  - **C6:** `pages/account/join.tsx` `safeReferrer()`. After log in or sign up, only same-site paths are followed; anything else goes home.
+  - **C7:** `apollo/client.ts` no longer logs every operation (variables included passwords) or every socket frame. GraphQL and network error logs stay.
+  - **H10:** `libs/sweetAlert.ts` uses `titleText` instead of `title`, so messages are plain text. Same element and classes, same look.
+
+| Check | Result |
+| --- | --- |
+| `yarn tsc --noEmit` | Passed |
+| `safeReferrer` cases (path, `//`, `/\`, `https:`, `javascript:`, empty, missing, array) | All as expected |
+| Injected GraphQL error with `<b>` / `<img onerror>` (Playwright route, no DB access) | Literal text in the GameVerse alert, nothing executed |
+| Console on `/game`, `/`, `/developer`, `/community`, `/cs`, `/account/join` | No request/socket logs. Only page error: headless Chrome has no WebGL for the 3D shelf (environment) |
+
+## Production audit — Group 2: frontend stability (gameverse-next, 2026-10-11)
+
+- **H12 `/member` on phones and iPads:** removed the `device === 'mobile'` placeholder branches ("MEMBER PAGE MOBILE" and others) from `pages/member/index.tsx`, `MemberMenu`, `MemberGames`, `MemberArticles` and `common/CommunityCard` (4 lines each, plus the unused hook). The page's fixed 1260px frame forced a 1260px layout viewport on phones, so `memberPage.scss` gained one `max-width: 899px` block: frame full width, menu stacked above the list, follower rows wrap. Desktop rules are unchanged. The page itself is still the legacy (not redesigned) design.
+- **H13:**
+  - `pages/developer/index.tsx` uses a guarded `parseInput`: a malformed `?input=` falls back to the defaults.
+  - New `pages/404.tsx` and `pages/500.tsx`, plus `AppErrorBoundary` in `_app.tsx`. It resets when the path changes and offers "Reload page" and "Back to home".
+  - All three share `libs/components/common/GvErrorState.tsx`, which reuses the "Developer not found" state (`.gv-gd-state`, chapter label, `gv-gd-cta`). The only new style is `&__actions` in `gameDetail.scss`.
+- **H14:** `Top.tsx` registers the navbar `scroll` listener once in a `useEffect`, with removal on unmount (`passive`). It used to be added on every render and never removed.
+- **H17:** `Chat.tsx` ignores non-JSON socket frames, and new messages use a functional `setState` (no in-place push; `messagesList` left the effect dependencies).
+
+| Check | Result |
+| --- | --- |
+| `yarn tsc --noEmit` | Passed |
+| `/member` (iPhone 13), tabs games / followers / followings / articles | No placeholder text; layout width 390 on every tab (was 1260); desktop 1440 unchanged |
+| `/developer?input={broken` | List renders with the default input, no errors |
+| `/no-such-page`, desktop and phone | GameVerse 404, title "Page not found \| Gameverse", no overflow |
+| Window scroll listeners (CDP `getEventListeners`) over 6 client navigations with scrolling | Constant (2) |
+| Chat: injected non-JSON frame + 2 messages | No exception; each message shown once |
+| Error boundary | Typecheck only; no safe way to force a render error in the real app |
+
+## Production audit — Group 3: indexing, 3D shelf, security headers (gameverse-next, 2026-10-11)
+
+- **H15:**
+  - New `public/robots.txt` disallows `/_admin`, `/mypage`, `/notifications` and `/account`, including the `/kr` and `/ru` prefixes.
+  - `_document.tsx` no longer sets a site-wide `robots index,follow` (it is the default).
+  - `noindex, nofollow` (`key="robots"`) on `LayoutAdmin` (also in its signed-out render, which shows nothing but now emits the tag), `/mypage`, `/notifications` and `/account/join`. The 404, 500 and error states are `noindex`.
+- **H16:** `FiberContainer` `<Canvas frameloop="demand">`. The shelf redraws only when the scroll damping calls `invalidate()`.
+- **H11, `next.config.js`:**
+  - `poweredByHeader: false`.
+  - On every route: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (camera, microphone, geolocation and payment off).
+  - Production builds only: `Strict-Transport-Security: max-age=15552000` (no `includeSubDomains`) and `Content-Security-Policy-Report-Only`. Its API origins come from the `REACT_APP_*` env vars; it allows Google Fonts and YouTube frames, `frame-ancestors 'none'`, `object-src 'none'`. Switch it to enforcing after watching production reports.
+- **New finding C9:** `REACT_APP_*` exist only in `.env.development`, so a production build without them in its environment has no API URL. Hosting must provide them at build time.
+
+| Check | Result |
+| --- | --- |
+| `yarn tsc --noEmit`, `yarn build` | Passed (built once plain, once with the dev API env loaded) |
+| Headers on the production server | All present; no `X-Powered-By` |
+| Robots | `robots.txt` served; noindex in the HTML of the private pages and `/kr/mypage`; none on public pages |
+| CSP report-only, 9 pages incl. game detail (Chrome) | 0 violations, no page errors |
+| 3D shelf (SwiftShader WebGL) | 0 draw calls in 2 s idle, 261 while scrolling; images render |
+
+## Production audit — Group 4: backend critical security C1–C4 (gameverse, approved 2026-10-11)
+
+GraphQL contract unchanged: same operations, fields and types.
+
+- **C1 `signup`:** `memberType: ADMIN` is refused with `NOT_ALLOWED_REQUEST` before anything is created. USER, AGENT and omitted work as before.
+- **C2 `updateMember` (self-service):** `memberType`, `memberStatus` and `_id` are dropped from a copy of the input before saving. Only `updateMemberByAdmin` can change role or status. The My Page profile form never sent them (it sends `_id`, nick, phone, address, image).
+- **C3:** `memberPassword` in `updateMember` or `updateMemberByAdmin` is hashed with `AuthService.hashPassword`. It was stored in plain text and locked the account out.
+- **C4 uploads:**
+  - `MemberResolver.saveImage()`, used by `imageUploader` and `imagesUploader`, writes to `uploads/<target>/<uuid>.upload`. It reads the first bytes (`detectImageExtension` in `libs/config.ts`: PNG signature or JPEG `FF D8 FF`), then renames to `<uuid>.png` / `<uuid>.jpg`, or deletes the file and returns `PROVIDE_ALLOWED_FORMAT`.
+  - The client's filename extension is no longer used (`getSerialForImage()` takes no argument). The MIME check stays as a first filter.
+  - Read-stream errors, e.g. exceeding `maxFileSize`, now reject with `UPLOAD_FAILED` and remove the partial file instead of hanging (audit M7).
+  - `main.ts`: `uploadsGuard` (`libs/middleware/uploads.middleware.ts`) in front of `express.static('./uploads')` serves only `.png` / `.jpg` / `.jpeg` (404 otherwise), with `X-Content-Type-Options: nosniff`. All existing upload files were jpg / jpeg / png.
+- **Tests:**
+  - `member.security.spec.ts`: signup ADMIN refused; USER, AGENT and none allowed; self-update strips role, status and `_id`; password hashed in both update paths and not hashed without a password; PNG/JPEG detection; real temp-directory `saveImage` runs: png and jpg stored, HTML and SVG rejected and removed, stream error fails and cleans up, target allow-list kept.
+  - `uploads.middleware.spec.ts` (supertest): images served with nosniff; `.html`, `.svg`, directory and `.upload` return 404.
+  - `member.service.spec.ts`: stale typings fixed (6th constructor argument, explicit generic), so repo-wide `tsc` passes again.
+
+| Check | Result |
+| --- | --- |
+| `tsc -p tsconfig.json --noEmit` (whole repo incl. specs) | Passed |
+| `jest` | 22 suites, 125 tests passed |
+| `npm run build:api`, `npm run build:batch` | Passed |
+| ESLint on changed lines and new files | No new problems besides the repo's existing `no-unsafe-*` pattern for `as any` mocks |
+| Live API | Not exercised: the dev DB is production (C5). **Restart the API on :3007 to load the changes** |
+
+## Production audit — Group 5: backend hardening H3, H5, H6 (gameverse, 2026-10-11)
+
+No new dependencies; GraphQL contract unchanged.
+
+- **H3:** `getAgents`, `getAllMembersByAdmin` and `getBoardArticles` search with `new RegExp(escapeRegex(text), 'i')`, like games, notices and inquiries already did. A `@MaxLength` on `search.text` would not run until nested search inputs are validated (audit M2), so the length limit waits for M2.
+- **H5 (`app.module.ts`):**
+  - `playground` and `introspection` are off when `NODE_ENV=production`. `NODE_ENV` comes from the start command, as in `start:prod`.
+  - `validationRules: [queryLimitsRule]` (`libs/security/query-limits.ts`): at most 8 levels deep and 5 top-level fields per operation; aliases count, fragments are followed, introspection fields are exempt.
+  - The frontend's 50 operations reach depth 4 and use 1 root field each (measured).
+- **H6:**
+  - `main.ts` uses `enableCors({ origin: resolveCorsOrigins() })` (`libs/security/http-security.ts`). It takes the origins from `CORS_ORIGINS` (comma-separated). Without it, development allows only `http(s)://localhost|127.0.0.1[:port]`, and production throws, so the API does not listen. It is resolved after `NestFactory.create`, so a value in `.env` is picked up.
+  - `x-powered-by` is disabled. The `securityHeaders()` middleware sets nosniff, `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer`, plus HSTS in production.
+- **Deployment:** set `CORS_ORIGINS` to the production frontend origin(s) in the API environment.
+- **Tests:**
+  - `query-limits.spec.ts`: frontend-shaped queries pass; depth and fragment depth are rejected; alias floods are rejected and 5 aliases are allowed; introspection is not counted.
+  - `http-security.spec.ts`: origin parsing, dev localhost only (`localhost.evil.example` refused), production without the variable throws, headers set, HSTS only in production.
+  - `member.security.spec.ts`: regex text is escaped in the member searches.
+
+| Check | Result |
+| --- | --- |
+| `tsc -p tsconfig.json --noEmit`, `jest` | Passed; 24 suites, 135 tests |
+| `build:api`, `build:batch` | Passed |
+| Built API on :3017, `NODE_ENV=production` without `CORS_ORIGINS` | Refuses to start with a clear message |
+| Same, with `CORS_ORIGINS=https://gv.example` | Allowed origin echoed; `evil.example` gets no CORS headers; headers present, no `X-Powered-By`; Playground 400; introspection refused; `getGames` works; 6 aliased `login`s → validation error, none executed; `getAgents` text `(a+)+$` → literal search, empty result |
+| Same, development mode | `localhost:3000` allowed with `authorization`, `content-type` and `apollo-require-preflight`; Playground and introspection work; `/uploads` image 200 `image/png` |
+| ESLint on the new files | No problems besides the repo's existing `no-unsafe-*` pattern |
+
+## Production audit — Group 6: personal data exposure H1, H2, H9 (gameverse + gameverse-next, 2026-10-11)
+
+- **Decision (user):** phone and address are private for everyone, players and developers. Only the member themselves and admins see them.
+- **H1 (API), `components/member/member-privacy.resolver.ts`:**
+  - `@ResolveField` on `Member.memberPhone` / `memberAddress`. It covers every `Member` in the schema, top-level and nested (`memberData`, `authorData`, `followerData`, `followingData`).
+  - The viewer is the member the guards put on `req.body.authMember`. Values are returned only when the viewer is that member or an `ADMIN`; otherwise phone is `''` (the field stays `String!`) and address is `null`. Login and signup have no viewer, and the frontend reads only `accessToken` from them.
+  - Registered in `MemberModule`. Contract unchanged.
+- **H2 (chat), `socket/socket.gateway.ts`:** `toChatMember()` → `{ _id, memberNick, memberImage }` for join, leave and message events and the stored history. Live notifications already projected nick, image and type only.
+- **Frontend:**
+  - `MemberMenu` renders the phone row only when there is a number.
+  - The developer page already hid its contact line when empty.
+  - My Page and the admin header read your own data from the token, and the admin users list keeps phone numbers (admin).
+- **H9, `libs/components/community/TViewer.tsx`:**
+  - The iframe renderer outputs only YouTube / youtube-nocookie `/embed/<11-char id>` URLs (`youtubeEmbedSrc`) with fixed `src`, `title`, `width` and `height`. Everything else is dropped.
+  - No existing post had an iframe (8 scanned). The viewer's sanitizer strips `sandbox` / `allow`, so they are not set.
+- **Note:** the dev API runs `nest start --watch`, so backend changes, including Groups 4–5, went live on :3007 without a restart.
+- **Deployment:** `CORS_ORIGINS=https://gameverse.kr,https://www.gameverse.kr` goes in the production API environment, not the local `.env`. See the checklist in `gameverse-next/docs/PRODUCTION_AUDIT.md`.
+
+| Check | Result |
+| --- | --- |
+| Backend `tsc`, `jest` | Passed; 25 suites, 144 tests (`member-privacy.spec.ts`: hidden for visitor, signed-out, other player and other developer; shown to self (string or ObjectId id) and to admins; chat member shape) |
+| Anonymous GraphQL against the API | 0 members expose phone or address in `getAgents` (7), `getMember`, `getGames.memberData` (10), `getBoardArticles.memberData` (2), `getComments.memberData` (1); schema types unchanged |
+| Post with injected iframes (Playwright response interception, no DB write) | Only the YouTube frame rendered; `evil.example` and `javascript:` dropped; `onload` removed; text kept; no script ran |
+| `/member` as a visitor | No phone row |
+| Frontend `yarn tsc --noEmit` | Passed |
+
+## Production audit — Group 7: safe dependency updates C8 (gameverse-next + gameverse, 2026-10-11)
+
+Rule (user-approved): same-major updates and removal of unused packages only; no major upgrades. Package files were backed up before starting.
+
+- **Frontend (yarn):**
+  - `next` 14.2.0 → 14.2.35.
+  - Removed `react-scripts`, `react-tree`, `view`, `styled-components`, `babel-plugin-styled-components`, `js-cookie`: zero imports in `pages`, `libs`, `apollo`, `scss` and the configs; no Babel config.
+  - Transitive `i18next-fs-backend` 2.2.0 → 2.6.8: lock entry refreshed within `next-i18next`'s `^2.1.5`.
+  - `yarn audit` (dependencies): 741 → 109 advisories, critical 39 → 4.
+- **Backend (npm):** `npm audit fix` without `--force`. Lockfile only, `package.json` unchanged: `proxy-addr` 2.0.8, `express` 4.22.3, `body-parser`, `qs`, `axios` 1.20, `engine.io`, …; an extraneous `uuid@14` was pruned. `npm audit --omit=dev`: 34 → 29, critical 1 → 0.
+- **Not updated (majors):** Next 15, Apollo Server 5, Nest 11, `graphql-upload` 15+, axios 1.x on the frontend, a new `swiper` major, and the Toast UI editor's DOMPurify. Listed with their exposure in `PRODUCTION_AUDIT.md` → "Residual dependency risks".
+- **Note:** the dev API on :3007 (`nest start --watch`) loads the new backend packages on its next restart or reload.
+
+| Check | Result |
+| --- | --- |
+| FE after each step (Next update; react-scripts removal; other removals + i18n) | `tsc` passed; `next build` passed (with the dev API env); browser tour of 13 pages, desktop and iPhone 13: 0 problems (content, errors, overflow); chat opens; security headers present; 5 transitions (header, card → detail, Back, Community, logo) covered and cleared at 0.65–1.47 s |
+| FE i18n | `/kr/game` and `/ru/game` render 게임 / 개발자 / 커뮤니티 and Игры / Разработчики / Сообщество |
+| BE | `tsc` passed; `jest` 25 suites, 144 tests; `build:api` and `build:batch` passed |
+| Built API on :3017 | REST and GraphQL OK; phone still hidden; auth required where expected; CORS `localhost:3000`; images 200; multipart parsed (auth enforced); guest chat round-trip delivered |
+
+## Production audit — Groups 8 and 9: abuse limits and token hygiene (gameverse + gameverse-next, 2026-10-11)
+
+- **H4:** `libs/security/attempt-limiter.ts`: `AttemptLimiter` (in-memory sliding window) and `AuthAttemptService` (provider in `MemberModule`).
+  - Limits: login 10 per 15 min per IP + lower-cased nickname, reset on success, plus 50 per 15 min per IP; signup 10 per hour per IP. Over the limit: `Message.TOO_MANY_ATTEMPTS` (HTTP 429 exception); the login form shows the server text.
+  - `MemberResolver.signup/login` take `@Context()` for the client IP. `main.ts` sets Express `trust proxy` from `TRUST_PROXY`.
+  - Password length policy (5–12) unchanged: changing it changes signup rules.
+- **H7:** `libs/security/chat-limits.ts` + `socket.gateway.ts`.
+  - `@WebSocketGateway({ maxPayload: 16 KB, verifyClient })`. Browser origins must be in the CORS list; no Origin header is allowed.
+  - `acceptChatText`: string, 1–500 chars, never modified, because the frontend matches its own messages by text. `ChatRateLimiter`: 5 per 5 s per connection, forgotten on disconnect. Log text is one line, at most 80 chars.
+  - Guests can still post. Frontend chat input has `maxLength={500}`.
+- **H8 (partly), `components/auth/jwt.config.ts`:** production refuses `SECRET_TOKEN` shorter than 32 chars (dev warns); `expiresIn` comes from `JWT_EXPIRES_IN`, default `7d` (was 30d). Deferred: slimmer token payload (My Page reads phone/address from it) and the token in the socket URL.
+
+| Check | Result |
+| --- | --- |
+| Backend `tsc`, `jest` | Passed; 27 suites, 162 tests (attempt limiter + resolver limits, chat limits, JWT strength / lifetime incl. exp − iat = 7 days) |
+| Built API on :3017 | 11th login for one nickname → "Too many attempts…", another nickname still answered; socket from `https://evil.example` → 401, from `localhost:3000` → connected; 7 rapid guest messages → 5 delivered, object payload dropped; 20 KB frame → closed 1009; production + current 17-char secret → refuses to start; dev → warning, starts |
+
+## Production audit — Phase 3 final verification (2026-10-11)
+
+- **Verdict: READY WITH WARNINGS.** Full results, the not-verified areas and the deployment settings are in `gameverse-next/docs/PRODUCTION_AUDIT.md` → "Phase 3 — Final verification".
+- **Automated:**
+  - Frontend: tsc + Next 14.2.35 build passed; `yarn audit` 109 (4 critical).
+  - Backend: whole-repo tsc passed, jest 27 / 162, both builds passed; `npm audit` 29 (0 critical).
+  - Not run: e2e (shared production DB) and frontend lint (no config).
+- **Live:**
+  - 13 pages × desktop / phone with 0 problems; 5/5 transitions; phone drawer; language switch; escaped alerts; visitor privacy; 0 CSP violations; robots / noindex; headers.
+  - API in production mode (temporary strong secret, `CORS_ORIGINS=https://gameverse.kr`): all probes as intended. With the current short secret it refuses to start.
+- **New finding M31:** desktop CLS 0.199 on game detail. The footer under the 720 px loading state is pushed off-screen; a one-line CSS fix is recorded, not applied.
+- **Before deploy:** separate DB (C5), a new `SECRET_TOKEN` of 32+ chars, `CORS_ORIGINS` (+ `TRUST_PROXY`), production `REACT_APP_*` at build time (C9).
+
+## M31 fix: layout shift on game detail (gameverse-next, 2026-10-11)
+
+- `scss/pc/game/gameDetail.scss`: `.gv-gd .gv-gd-state` `min-height: max(80vh, 560px)` → `max(100vh, 560px)` + `max(100svh, 560px)` (same pattern as the hero). The loading, not-found and error states, and the 404 / 500 / error-boundary pages that reuse them, now fill the screen, so the footer is no longer pushed down when the data arrives.
+
+| Check (production build, 3 runs each) | Result |
+| --- | --- |
+| CLS game detail | Desktop 0.199 → 0; phone 0 |
+| CLS developer detail / 404 | Desktop 0.061 (good) / 0; phone 0 / 0 |
+| `yarn tsc --noEmit`, `next build`, tour 13 pages × desktop / phone | Passed; 0 problems |

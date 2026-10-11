@@ -27,13 +27,21 @@ export const escapeRegex = (text: string): string => text.replace(/[.*+?^${}()|[
 // IMAGE CONFIGURATION
 // ----------------------------------------
 import { randomUUID } from 'crypto';
-import * as path from 'path';
 import { T } from './types/common';
 
 export const validMimeTypes = ['image/png', 'image/jpg', 'image/jpeg'];
-export const getSerialForImage = (filename: string) => {
-	const ext = path.parse(filename).ext;
-	return randomUUID() + ext;
+/** File name without extension: the extension comes from the file's content (detectImageExtension), never the client **/
+export const getSerialForImage = (): string => randomUUID();
+
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+/** Bytes needed by detectImageExtension **/
+export const IMAGE_SIGNATURE_LENGTH = PNG_SIGNATURE.length;
+/** PNG or JPEG judged by the first bytes of the file; anything else (HTML, SVG, scripts…) is null **/
+export const detectImageExtension = (head: Buffer): '.png' | '.jpg' | null => {
+	if (head.length >= PNG_SIGNATURE.length && head.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE))
+		return '.png';
+	if (head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return '.jpg';
+	return null;
 };
 
 export function shapeIntoMongoObjectId(target: string): ObjectId;

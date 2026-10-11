@@ -16,7 +16,7 @@ import { LikeGroup } from '../../libs/enums/like.enum';
 import { NotificationService, idText } from '../notification/notification.service';
 import { NotificationGroup, NotificationType } from '../../libs/enums/notification.enum';
 import { Follower, Following, MeFollowed } from '../../libs/dto/follow/follow';
-import { lookupAuthMemberLiked } from '../../libs/config';
+import { escapeRegex, lookupAuthMemberLiked } from '../../libs/config';
 
 export const memberGamesFallbackStage = {
 	$set: {
@@ -42,6 +42,8 @@ export class MemberService {
 	) {}
 
 	public async signup(input: MemberInput): Promise<Member> {
+		// Public signup may create USER or AGENT accounts only; ADMIN accounts are never self-assigned
+		if (input.memberType === MemberType.ADMIN) throw new BadRequestException(Message.NOT_ALLOWED_REQUEST);
 		// hash password
 		input.memberPassword = await this.authService.hashPassword(input.memberPassword);
 		try {
@@ -77,8 +79,14 @@ export class MemberService {
 	}
 
 	public async updateMember(memberId: ObjectId, input: MemberUpdate): Promise<Member> {
+		// Self-service updates never change the role or the account status (updateMemberByAdmin does)
+		const update: MemberUpdate = { ...input };
+		delete update.memberType;
+		delete update.memberStatus;
+		delete update._id;
+		if (update.memberPassword) update.memberPassword = await this.authService.hashPassword(update.memberPassword);
 		const result: Member | null = await this.memberModel
-			.findOneAndUpdate({ _id: memberId, memberStatus: MemberStatus.ACTIVE }, input, { new: true })
+			.findOneAndUpdate({ _id: memberId, memberStatus: MemberStatus.ACTIVE }, update, { new: true })
 			.exec();
 		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
 		result.accessToken = await this.authService.createToken(result);
@@ -132,7 +140,7 @@ export class MemberService {
 		const match: T = { memberType: MemberType.AGENT, memberStatus: MemberStatus.ACTIVE };
 		const sort: T = { [input?.sort ?? 'createdAt']: input?.direction ?? Direction.DESC };
 
-		if (text) match.memberNick = { $regex: new RegExp(text, 'i') };
+		if (text) match.memberNick = { $regex: new RegExp(escapeRegex(text), 'i') };
 		console.log('match:', match);
 
 		const result = await this.memberModel
@@ -194,7 +202,7 @@ export class MemberService {
 
 		if (memberStatus) match.memberStatus = memberStatus;
 		if (memberType) match.memberType = memberType;
-		if (text) match.memberNick = { $regex: new RegExp(text, 'i') };
+		if (text) match.memberNick = { $regex: new RegExp(escapeRegex(text), 'i') };
 		console.log('match:', match);
 
 		const result = await this.memberModel
@@ -216,6 +224,7 @@ export class MemberService {
 	}
 
 	public async updateMemberByAdmin(input: MemberUpdate): Promise<Member> {
+		if (input.memberPassword) input.memberPassword = await this.authService.hashPassword(input.memberPassword);
 		const result: Member | null = await this.memberModel
 			.findByIdAndUpdate({ _id: input._id }, input, { new: true })
 			.exec();

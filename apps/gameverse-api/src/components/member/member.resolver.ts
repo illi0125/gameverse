@@ -1,8 +1,8 @@
-import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { MemberService } from './member.service';
 import { AgentsInquiry, LoginInput, MemberInput, MembersInquiry } from '../../libs/dto/member/member.input';
 import { Member, Members } from '../../libs/dto/member/member';
-import { UseGuards } from '@nestjs/common';
+import { HttpException, HttpStatus, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { AuthMember } from '../auth/decorators/authMember.decorator';
 import { type ObjectId } from 'mongoose';
@@ -10,27 +10,46 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { MemberType } from '../../libs/enums/member.enum';
 import { MemberUpdate } from '../../libs/dto/member/member.update';
-import { getSerialForImage, shapeIntoMongoObjectId, validMimeTypes } from '../../libs/config';
+import {
+	detectImageExtension,
+	getSerialForImage,
+	IMAGE_SIGNATURE_LENGTH,
+	shapeIntoMongoObjectId,
+	validMimeTypes,
+} from '../../libs/config';
 import { WithoutGuard } from '../auth/guards/without.guard';
 import { GraphQLUpload, FileUpload } from 'graphql-upload';
-import { createWriteStream, mkdirSync } from 'fs';
+import { closeSync, createWriteStream, mkdirSync, openSync, readSync, renameSync, rmSync } from 'fs';
 import * as path from 'path';
 import { Message } from '../../libs/enums/common.enum';
+import { AuthAttemptService, clientIp } from '../../libs/security/attempt-limiter';
 
 @Resolver()
 export class MemberResolver {
-	constructor(private readonly memberService: MemberService) {}
+	constructor(
+		private readonly memberService: MemberService,
+		private readonly authAttempts: AuthAttemptService,
+	) {}
 
 	@Mutation(() => Member)
-	public async signup(@Args('input') input: MemberInput): Promise<Member> {
+	public async signup(@Args('input') input: MemberInput, @Context() context: { req?: any }): Promise<Member> {
 		console.log('Mutation: signup');
+		if (!this.authAttempts.allowSignup(clientIp(context?.req))) {
+			throw new HttpException(Message.TOO_MANY_ATTEMPTS, HttpStatus.TOO_MANY_REQUESTS);
+		}
 		return await this.memberService.signup(input);
 	}
 
 	@Mutation(() => Member)
-	public async login(@Args('input') input: LoginInput): Promise<Member> {
+	public async login(@Args('input') input: LoginInput, @Context() context: { req?: any }): Promise<Member> {
 		console.log('Mutation: login');
-		return await this.memberService.login(input);
+		const ip = clientIp(context?.req);
+		if (!this.authAttempts.allowLogin(ip, input.memberNick)) {
+			throw new HttpException(Message.TOO_MANY_ATTEMPTS, HttpStatus.TOO_MANY_REQUESTS);
+		}
+		const member = await this.memberService.login(input);
+		this.authAttempts.loginSucceeded(ip, input.memberNick);
+		return member;
 	}
 	@UseGuards(AuthGuard)
 	@Query(() => String)
@@ -131,19 +150,7 @@ export class MemberResolver {
 		const validMime = validMimeTypes.includes(mimetype);
 		if (!validMime) throw new Error(Message.PROVIDE_ALLOWED_FORMAT);
 
-		const imageName = getSerialForImage(filename);
-		const url = this.buildUploadPath(target, imageName);
-		const stream = createReadStream();
-
-		const result = await new Promise((resolve, reject) => {
-			stream
-				.pipe(createWriteStream(url))
-				.on('finish', async () => resolve(true))
-				.on('error', () => reject(false));
-		});
-		if (!result) throw new Error(Message.UPLOAD_FAILED);
-
-		return url;
+		return await this.saveImage(createReadStream(), String(target));
 	}
 
 	@UseGuards(AuthGuard)
@@ -158,24 +165,12 @@ export class MemberResolver {
 		const uploadedImages: string[] = [];
 		const promisedList = files.map(async (img: Promise<FileUpload>, index: number): Promise<Promise<void>> => {
 			try {
-				const { filename, mimetype, encoding, createReadStream } = await img;
+				const { mimetype, createReadStream } = await img;
 
 				const validMime = validMimeTypes.includes(mimetype);
 				if (!validMime) throw new Error(Message.PROVIDE_ALLOWED_FORMAT);
 
-				const imageName = getSerialForImage(filename);
-				const url = this.buildUploadPath(target, imageName);
-				const stream = createReadStream();
-
-				const result = await new Promise((resolve, reject) => {
-					stream
-						.pipe(createWriteStream(url))
-						.on('finish', () => resolve(true))
-						.on('error', () => reject(false));
-				});
-				if (!result) throw new Error(Message.UPLOAD_FAILED);
-
-				uploadedImages[index] = url;
+				uploadedImages[index] = await this.saveImage(createReadStream(), String(target));
 			} catch (err) {
 				console.log('Error, file missing!');
 			}
@@ -183,6 +178,39 @@ export class MemberResolver {
 
 		await Promise.all(promisedList);
 		return uploadedImages;
+	}
+
+	/**
+	 * Writes the upload to a temporary file, then keeps it only if its first bytes are a PNG or JPEG.
+	 * The stored extension comes from that content, so a renamed HTML/SVG file is never served as such.
+	 */
+	private async saveImage(stream: NodeJS.ReadableStream, target: string): Promise<string> {
+		const tempPath = this.buildUploadPath(target, `${getSerialForImage()}.upload`);
+		try {
+			await new Promise<void>((resolve, reject) => {
+				const file = createWriteStream(tempPath);
+				stream.on('error', reject); // e.g. over maxFileSize: without this the request could hang
+				file.on('error', reject).on('finish', () => resolve());
+				stream.pipe(file);
+			});
+		} catch {
+			rmSync(tempPath, { force: true });
+			throw new Error(Message.UPLOAD_FAILED);
+		}
+
+		const head = Buffer.alloc(IMAGE_SIGNATURE_LENGTH);
+		const fd = openSync(tempPath, 'r');
+		const bytesRead = readSync(fd, head, 0, head.length, 0);
+		closeSync(fd);
+		const extension = detectImageExtension(head.subarray(0, bytesRead));
+		if (!extension) {
+			rmSync(tempPath, { force: true });
+			throw new Error(Message.PROVIDE_ALLOWED_FORMAT);
+		}
+
+		const url = tempPath.replace(/\.upload$/, extension);
+		renameSync(tempPath, url);
+		return url;
 	}
 
 	private buildUploadPath(target: String, imageName: string): string {

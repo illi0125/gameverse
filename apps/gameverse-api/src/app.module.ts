@@ -9,13 +9,19 @@ import { ComponentsModule } from './components/components.module';
 import { DatabaseModule } from './database/database.module';
 import { T } from './libs/types/common';
 import { SocketModule } from './socket/socket.module';
+import { queryLimitsRule } from './libs/security/query-limits';
+
+const isProduction = process.env.NODE_ENV === 'production';
 
 @Module({
 	imports: [
 		ConfigModule.forRoot(),
 		GraphQLModule.forRoot({
 			driver: ApolloDriver,
-			playground: true,
+			// Schema exploration only outside production
+			playground: !isProduction,
+			introspection: !isProduction,
+			validationRules: [queryLimitsRule],
 			uploads: false,
 			autoSchemaFile: true,
 			formatError: (error: any) => {
