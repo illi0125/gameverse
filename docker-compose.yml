@@ -1,0 +1,44 @@
+version: "3.3"
+
+services:
+  gameverse-api:
+    container_name: gameverse-api
+    restart: always
+    image: node:20.20.2
+    ports:
+      - 4001:3007
+    volumes:
+      - ./:/usr/src/gameverse
+    working_dir: /usr/src/gameverse
+
+    networks:
+      - monorepo-network
+
+    # FOR PRODUCTION
+    command: bash -c "npm install && npm run build && npm run start:prod"
+
+
+  gameverse-batch:
+    container_name: gameverse-batch
+    restart: unless-stopped
+    image: node:20.20.2
+    ports:
+      - 4002:3008
+    volumes:
+      - ./:/usr/src/gameverse
+    working_dir: /usr/src/gameverse
+    
+    networks:
+      - monorepo-network
+
+    # FOR PRODUCTION
+    command: bash -c "npm install && npm run build && npm run start:prod:batch"
+
+networks:
+  monorepo-network:
+    driver: bridge
+
+
+# gameverse-next: localhost:4000 <=> container:3000
+# gameverse-api: localhost:4001 <=> container:3007
+# gameverse-batch: localhost:4002 <=> container:3008
