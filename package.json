@@ -15,7 +15,7 @@
     "start:dev:batch": "nest start gameverse-batch --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "NODE_ENV=production node dist/apps/gameverse-api/main",
-    "start:prod:batch": "node dist/apps/gameverse-batch/main",
+    "start:prod:batch": "NODE_ENV=production node dist/apps/gameverse-batch/main",
     "migrate:games": "ts-node scripts/migrate-property-to-game.ts",
     "migrate:member-games": "ts-node scripts/backfill-member-games.ts",
     "repair:game-owner": "ts-node scripts/repair-orphan-game-owner.ts",

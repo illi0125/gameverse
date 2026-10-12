@@ -1,5 +1,3 @@
-version: "3.3"
-
 services:
   gameverse-api:
     container_name: gameverse-api
