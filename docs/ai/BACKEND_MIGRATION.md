@@ -109,6 +109,33 @@ Notices, FAQ and 1:1 inquiries are real data now (previously the frontend hardco
 
   No self-notifications; unliking and liking again, or unfollowing and following again, never notify twice. Live Chat creates no notifications.
 
+## Support Assistant (AI) (2026-10-17, branch `feature/ai-support-assistant`)
+
+The "Ask AI" tab on `/cs`: signed-in members ask questions, and **Google Gemini** answers only from the published FAQ entries and notices. The feature is additive (new module `components/assistant`); no existing operation, schema or collection changed. It only reads `notices`. The owner chose Gemini (an AI Studio key) over Claude.
+
+- **API:**
+  - `getAssistantStatus: AssistantStatus!` (`WithoutGuard`) returns `{ enabled }`. The frontend shows the tab only when it is `true`.
+  - `askAssistant(input: AssistantInput!): AssistantReply!` (`AuthGuard`).
+    - Input: `question` (2–500), optional `history` (≤ 6 turns of `{ role: USER | ASSISTANT, text ≤ 1500 }`, oldest first; kept only by the browser).
+    - Reply: `{ status: OK | LIMITED | UNAVAILABLE, answer (plain text), sourceIds (FAQ / notice ids actually in the knowledge), suggestInquiry }`.
+  - Limits, the switch being off, a blocked or safety-stopped answer, invalid output and API errors are returned as `status` with a friendly `answer`, never thrown, because the frontend error link alerts on every GraphQL error. Only auth and input validation throw.
+- **Model call** (`@google/genai` 2.30.0, pinned; `models.generateContent`):
+  - Model from `AI_MODEL`, default `gemini-3.5-flash`. On 2026-10-17 `gemini-2.5-flash` returned 404 for new keys and `gemini-3.8-flash` returned 503.
+  - JSON output (`responseMimeType` + `responseJsonSchema`), `thinkingLevel: LOW` (a Gemini 3 setting; a 2.x model in `AI_MODEL` may reject it), `maxOutputTokens` 4096.
+  - 20 s timeout. Up to 3 attempts on 500/502/503/504, because Gemini often answers 503 "high demand"; a 429 quota error is not retried.
+  - The system instruction is the fixed rules plus the knowledge block (ACTIVE FAQ ≤ 200 + latest 20 notices, cached in memory for 5 minutes). This is a stable prefix for Gemini's implicit caching.
+  - Only text with `finishReason: STOP` is used.
+  - No tools: the model can only produce text. No member data is sent; the UI asks members not to type personal details.
+- **Limits** (`libs/security/assistant-limits.ts`, in memory per API process): 20 questions per member per hour, plus `AI_DAILY_LIMIT` (default 300) per UTC day for everyone. Gemini's own free-tier quota may be lower; past it, Gemini answers 429 and members see the "can't answer" reply.
+- **Env:**
+  - `AI_ASSISTANT_ENABLED=true` turns it on. Anything else, or a missing `AI_API_KEY`, leaves it disabled. The API still starts, because the feature is optional.
+  - `AI_API_KEY` (Google AI Studio) must stay server-side; never in a frontend `REACT_APP_*` variable.
+  - `AI_MODEL` and `AI_DAILY_LIMIT` are optional.
+  - Env is read at start, so changing any of them needs an API restart.
+- **Privacy:** on the Gemini API free tier, Google may use prompts and answers to improve its products. A paid (billing-enabled) key does not have this.
+- **Logs:** one line per question with member id, model, finish / block reason, prompt / cached / output / thought tokens and duration. Question text is not logged.
+- **Deploy order:** API first, then frontend. A frontend that queries `getAssistantStatus` against an API without it would show an error alert on `/cs`.
+
 ## Compatibility Boundary
 
 This release intentionally has no Property API alias or dual-read period. API and batch must be deployed together after a successful dry run during a write-maintenance window. The previous application build and migration snapshots are required for rollback.

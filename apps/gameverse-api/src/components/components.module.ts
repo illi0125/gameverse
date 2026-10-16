@@ -10,6 +10,7 @@ import { BoardArticleModule } from './board-article/board-article.module';
 import { NoticeModule } from './notice/notice.module';
 import { InquiryModule } from './inquiry/inquiry.module';
 import { NotificationModule } from './notification/notification.module';
+import { AssistantModule } from './assistant/assistant.module';
 
 @Module({
 	imports: [
@@ -24,6 +25,7 @@ import { NotificationModule } from './notification/notification.module';
 		NoticeModule,
 		InquiryModule,
 		NotificationModule,
+		AssistantModule,
 	],
 })
 export class ComponentsModule {}
